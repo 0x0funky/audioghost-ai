@@ -90,6 +90,10 @@ We also provide support for automatically predicting the spans based on the text
 ```python
 with torch.inference_mode()
    outputs = model.separate(batch, predict_spans=True)
+
+# To further improve performance (at the expense of latency), you can add candidate re-ranking
+with torch.inference_mode():
+   outputs = model.separate(batch, predict_spans=True, reranking_candidates=8)
 ```
 
 ### Re-Ranking
