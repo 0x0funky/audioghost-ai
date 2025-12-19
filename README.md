@@ -39,6 +39,7 @@ the following [steps](https://huggingface.co/docs/huggingface_hub/en/quick-start
 ```python
 from sam_audio import SAMAudio, SAMAudioProcessor
 import torchaudio
+import torch
 
 model = SAMAudio.from_pretrained("facebook/sam-audio-large")
 processor = SAMAudioProcessor.from_pretrained("facebook/sam-audio-large")
