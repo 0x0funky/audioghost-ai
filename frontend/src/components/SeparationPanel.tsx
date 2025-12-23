@@ -10,11 +10,12 @@ import {
     AlertCircle,
     Cpu,
     Search,
-    Sliders
+    Sliders,
+    Zap
 } from "lucide-react";
 
 interface SeparationPanelProps {
-    onSeparate: (description: string, mode: "extract" | "remove", modelSize: string, chunkDuration: number) => void;
+    onSeparate: (description: string, mode: "extract" | "remove", modelSize: string, chunkDuration: number, useFloat32: boolean) => void;
     isAuthenticated: boolean;
     onAuthRequired: () => void;
     hasRegion: boolean;
@@ -30,9 +31,9 @@ const QUICK_PROMPTS = [
 ];
 
 const MODEL_OPTIONS = [
-    { value: "small", label: "Small", vram: "~6GB", speed: "Fast" },
-    { value: "base", label: "Base", vram: "~7GB", speed: "Balanced" },
-    { value: "large", label: "Large", vram: "~10GB", speed: "Best" },
+    { value: "small", label: "Small", vram: "~6GB", vramFp32: "~9GB", speed: "Fast" },
+    { value: "base", label: "Base", vram: "~7GB", vramFp32: "~10GB", speed: "Balanced" },
+    { value: "large", label: "Large", vram: "~10GB", vramFp32: "~13GB", speed: "Best" },
 ] as const;
 
 export default function SeparationPanel({
@@ -46,6 +47,7 @@ export default function SeparationPanel({
     const [mode, setMode] = useState<"extract" | "remove">("extract");
     const [modelSize, setModelSize] = useState<"small" | "base" | "large">("base");
     const [chunkDuration, setChunkDuration] = useState(25);
+    const [useFloat32, setUseFloat32] = useState(false);
 
     const handleQuickSelect = (prompt: string) => {
         setSelectedPrompt(prompt);
@@ -61,7 +63,7 @@ export default function SeparationPanel({
         const prompt = customPrompt || selectedPrompt;
         if (!prompt) return;
 
-        onSeparate(prompt, mode, modelSize, chunkDuration);
+        onSeparate(prompt, mode, modelSize, chunkDuration, useFloat32);
     };
 
     const activePrompt = customPrompt || selectedPrompt;
@@ -271,7 +273,7 @@ export default function SeparationPanel({
                             Model
                         </label>
                         <div style={{ display: "flex", gap: "6px" }}>
-                            {MODEL_OPTIONS.map(({ value, label, vram }) => (
+                            {MODEL_OPTIONS.map(({ value, label, vram, vramFp32 }) => (
                                 <button
                                     key={value}
                                     onClick={() => setModelSize(value)}
@@ -289,11 +291,82 @@ export default function SeparationPanel({
                                     }}
                                 >
                                     <div style={{ fontWeight: 500, fontSize: "0.8rem" }}>{label}</div>
-                                    <div style={{ fontSize: "0.65rem", opacity: 0.7, marginTop: "2px" }}>{vram}</div>
+                                    <div style={{ fontSize: "0.65rem", opacity: 0.7, marginTop: "2px" }}>
+                                        {useFloat32 ? vramFp32 : vram}
+                                    </div>
                                 </button>
                             ))}
                         </div>
                     </div>
+                </div>
+
+                {/* Float32 Precision Toggle */}
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "14px 16px",
+                        marginBottom: "20px",
+                        borderRadius: "10px",
+                        background: useFloat32
+                            ? "linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(6, 182, 212, 0.1))"
+                            : "var(--bg-tertiary)",
+                        border: useFloat32
+                            ? "1px solid rgba(16, 185, 129, 0.3)"
+                            : "1px solid var(--border-color)"
+                    }}
+                >
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <Zap style={{
+                            width: "16px",
+                            height: "16px",
+                            color: useFloat32 ? "#10B981" : "var(--text-muted)"
+                        }} />
+                        <div>
+                            <div style={{
+                                fontSize: "0.85rem",
+                                fontWeight: 500,
+                                color: "var(--text-primary)"
+                            }}>
+                                High Quality Mode (float32)
+                            </div>
+                            <div style={{
+                                fontSize: "0.7rem",
+                                color: "var(--text-muted)",
+                                marginTop: "2px"
+                            }}>
+                                Better separation quality, +2-3GB VRAM
+                            </div>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setUseFloat32(!useFloat32)}
+                        style={{
+                            width: "44px",
+                            height: "24px",
+                            borderRadius: "12px",
+                            border: "none",
+                            cursor: "pointer",
+                            position: "relative",
+                            background: useFloat32
+                                ? "linear-gradient(135deg, #10B981, #06B6D4)"
+                                : "var(--bg-secondary)",
+                            transition: "all 0.2s ease"
+                        }}
+                    >
+                        <div style={{
+                            width: "18px",
+                            height: "18px",
+                            borderRadius: "50%",
+                            background: "white",
+                            position: "absolute",
+                            top: "3px",
+                            left: useFloat32 ? "23px" : "3px",
+                            transition: "left 0.2s ease",
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.2)"
+                        }} />
+                    </button>
                 </div>
 
                 {/* Chunk Duration Slider */}

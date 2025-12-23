@@ -99,7 +99,8 @@ export default function Home() {
     description: string,
     mode: "extract" | "remove",
     modelSize: string = "base",
-    chunkDuration: number = 25
+    chunkDuration: number = 25,
+    useFloat32: boolean = false
   ) => {
     if (!audioFile) return;
 
@@ -109,6 +110,7 @@ export default function Home() {
     formData.append("mode", mode);
     formData.append("model_size", modelSize);
     formData.append("chunk_duration", chunkDuration.toString());
+    formData.append("use_float32", useFloat32.toString());
 
     if (selectedRegion) {
       formData.append("start_time", selectedRegion.start.toString());

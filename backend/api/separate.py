@@ -37,22 +37,27 @@ async def create_separation_task(
     start_time: Optional[float] = Form(None),
     end_time: Optional[float] = Form(None),
     model_size: str = Form("base"),
-    chunk_duration: float = Form(25.0)
+    chunk_duration: float = Form(25.0),
+    use_float32: str = Form("false")
 ):
     """
     Create a new audio separation task
     
     - **file**: Audio file to process
-    - **description**: Text prompt describing the sound to separate (e.g., "singing voice", "background music")
+    - **description**: Text prompt describing the sound to separate
     - **mode**: "extract" to isolate the sound, "remove" to remove it
     - **start_time**: Optional start time for temporal prompting
     - **end_time**: Optional end time for temporal prompting
     - **model_size**: SAM Audio model size (small/base/large)
     - **chunk_duration**: Audio chunk duration in seconds (5-60, default 25)
+    - **use_float32**: Use float32 precision for better quality (default: false)
     """
     
     # Validate chunk_duration
     chunk_duration = max(5.0, min(60.0, chunk_duration))
+    
+    # Parse use_float32 from string to bool
+    use_float32_bool = use_float32.lower() == "true"
     
     # Validate file type
     allowed_types = ["audio/mpeg", "audio/wav", "audio/mp3", "audio/x-wav", "audio/flac"]
@@ -84,7 +89,8 @@ async def create_separation_task(
             mode,
             anchors,
             model_size,
-            chunk_duration
+            chunk_duration,
+            use_float32_bool
         ],
         task_id=task_id
     )

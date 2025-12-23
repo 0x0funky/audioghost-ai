@@ -174,11 +174,13 @@ Navigate to `http://localhost:3000`
 
 ### VRAM Usage (Lite Mode)
 
-| Model | Peak VRAM | Recommended GPU |
-|-------|-----------|-----------------|
-| Small | **~6 GB** | RTX 3060 6GB |
-| Base | **~7 GB** | RTX 3070/4060 8GB |
-| Large | **~10 GB** | RTX 3080/4070 12GB |
+| Model | bfloat16 (Default) | float32 (High Quality) | Recommended GPU |
+|-------|-------------------|------------------------|-----------------|
+| Small | **~6 GB** | **~9 GB** | RTX 3060 6GB / RTX 3070 8GB |
+| Base | **~7 GB** | **~10 GB** | RTX 3070/4060 8GB / RTX 4070 12GB |
+| Large | **~10 GB** | **~13 GB** | RTX 3080/4070 12GB / RTX 4080 16GB |
+
+> 💡 **High Quality Mode (float32)**: Better separation quality but uses +2-3GB more VRAM. Enable via the "High Quality Mode" toggle in the UI.
 
 ### Processing Time
 
@@ -206,7 +208,7 @@ AudioGhost uses a "Lite Mode" that removes unused model components:
 This is achieved by:
 - Disabling video-related features (not needed for audio-only)
 - Using `predict_spans=False` and `reranking_candidates=1`
-- Using `bfloat16` precision
+- Using `bfloat16` precision by default (optional float32 for quality)
 - 25-second chunking for long audio files
 
 ## Project Structure

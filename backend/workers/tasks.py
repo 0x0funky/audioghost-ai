@@ -166,7 +166,8 @@ def separate_audio_task(
     mode: str = "extract",
     anchors: Optional[List] = None,
     model_size: str = "base",
-    chunk_duration: float = 25.0
+    chunk_duration: float = 25.0,
+    use_float32: bool = False
 ):
     """
     Separate audio using SAM Audio Lite (memory optimized)
@@ -178,6 +179,7 @@ def separate_audio_task(
         anchors: Optional temporal anchors [["+", start, end], ...]
         model_size: Model size (small/base/large)
         chunk_duration: Audio chunk duration in seconds (5-60)
+        use_float32: Use float32 precision for better quality
     
     Returns:
         Dictionary with paths to output files
@@ -189,7 +191,17 @@ def separate_audio_task(
     
     task_id = self.request.id
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.bfloat16 if device == "cuda" else torch.float32
+    
+    # Debug: Show received parameter
+    print(f"[DEBUG] use_float32 parameter received: {use_float32} (type: {type(use_float32).__name__})")
+    
+    # Set precision based on use_float32 parameter
+    if use_float32 or device == "cpu":
+        dtype = torch.float32
+        print(f"[DEBUG] Using float32 precision (High Quality Mode)")
+    else:
+        dtype = torch.bfloat16
+        print(f"[DEBUG] Using bfloat16 precision (Memory Optimized)")
     
     # Start timing
     start_time = time.time()

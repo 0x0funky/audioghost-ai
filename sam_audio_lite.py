@@ -18,7 +18,7 @@ def show_gpu_memory(label: str = ""):
               f"Allocated: {allocated:.2f}GB | Reserved: {reserved:.2f}GB | Peak: {max_allocated:.2f}GB")
 
 
-def create_lite_model(model_name: str = "facebook/sam-audio-small", token: str = None):
+def create_lite_model(model_name: str = "facebook/sam-audio-base", token: str = None):
     """
     Create a memory-optimized SAM Audio model by removing unused components.
     
@@ -107,10 +107,17 @@ if __name__ == "__main__":
     import torchaudio
     from pathlib import Path
     
+    # =====================================
+    # CONFIGURATION
+    # =====================================
+    USE_BF16 = True  # Set to False to use float32 (better quality, more VRAM)
+    # =====================================
+    
     # Setup
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    dtype = torch.bfloat16
+    dtype = torch.bfloat16 if USE_BF16 else torch.float32
     print(f"Using device: {device}, dtype: {dtype}")
+    print(f"USE_BF16: {USE_BF16}")
     
     # Clear GPU memory and reset peak stats
     if torch.cuda.is_available():
@@ -127,7 +134,7 @@ if __name__ == "__main__":
     
     # Test audio
     test_audio = "test_chunk.mp3"
-    description = "A man speaking"
+    description = "singing voice"
     
     if not Path(test_audio).exists():
         print(f"\nNo test file at {test_audio}, creating test tone...")
