@@ -54,18 +54,15 @@ https://github.com/user-attachments/assets/49248e25-0c56-46ab-a821-2de7f7016bb6
 - **Python 3.11+**
 - **CUDA-compatible GPU** (4GB+ VRAM for lite mode, 12GB+ for full mode)
 - **CUDA 12.6** (recommended)
-- **FFmpeg** (via conda)
-- **Redis** (for Celery task queue)
 - **Node.js 18+** (for frontend)
+
+> 💡 FFmpeg and Redis are automatically installed by the installer.
 
 ## 🚀 One-Click Installation (Recommended)
 
 ### First Time Setup
 ```bash
-# 1. Start Redis
-docker-compose up -d
-
-# 2. Run installer (creates Conda env, installs all dependencies)
+# Run installer (creates Conda env, downloads Redis, installs all dependencies)
 install.bat
 ```
 
@@ -82,8 +79,9 @@ stop.bat
 
 ## Manual Setup (Advanced)
 
-### 1. Start Redis (using Docker)
+### 1. Start Redis
 
+Redis is automatically downloaded to `redis/` folder by `install.bat`. If you prefer Docker:
 ```bash
 docker-compose up -d
 ```
