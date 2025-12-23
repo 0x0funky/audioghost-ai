@@ -72,6 +72,7 @@ frontend/.next/
 frontend/out/
 
 # Redis/Celery
+redis/
 *.rdb
 celerybeat-schedule
 celerybeat.pid

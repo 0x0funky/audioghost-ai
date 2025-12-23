@@ -47,7 +47,29 @@ Describe the sound you want to extract or remove using natural language. Powered
 - **Redis** (for Celery task queue)
 - **Node.js 18+** (for frontend)
 
-## Quick Start
+## 🚀 One-Click Installation (Recommended)
+
+### First Time Setup
+```bash
+# 1. Start Redis
+docker-compose up -d
+
+# 2. Run installer (creates Conda env, installs all dependencies)
+install.bat
+```
+
+### Daily Usage
+```bash
+# Start all services with one click
+start.bat
+
+# Stop all services
+stop.bat
+```
+
+---
+
+## Manual Setup (Advanced)
 
 ### 1. Start Redis (using Docker)
 
