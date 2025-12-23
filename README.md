@@ -8,6 +8,10 @@ Describe the sound you want to extract or remove using natural language. Powered
 
 ![Demo](https://img.shields.io/badge/status-MVP%20v1.0-green) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
+## 🎬 Demo
+
+https://github.com/user-attachments/assets/49248e25-0c56-46ab-a821-2de7f7016bb6
+
 ## Features
 
 - 🎯 **Text-Guided Separation** - Describe what you want to extract: "vocals", "drums", "a dog barking"
