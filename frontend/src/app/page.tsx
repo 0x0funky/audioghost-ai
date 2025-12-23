@@ -95,7 +95,12 @@ export default function Home() {
     });
   };
 
-  const handleSeparation = async (description: string, mode: "extract" | "remove", modelSize: string = "base") => {
+  const handleSeparation = async (
+    description: string,
+    mode: "extract" | "remove",
+    modelSize: string = "base",
+    chunkDuration: number = 25
+  ) => {
     if (!audioFile) return;
 
     const formData = new FormData();
@@ -103,6 +108,7 @@ export default function Home() {
     formData.append("description", description);
     formData.append("mode", mode);
     formData.append("model_size", modelSize);
+    formData.append("chunk_duration", chunkDuration.toString());
 
     if (selectedRegion) {
       formData.append("start_time", selectedRegion.start.toString());

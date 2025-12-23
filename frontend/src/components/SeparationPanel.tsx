@@ -9,11 +9,12 @@ import {
     Clock,
     AlertCircle,
     Cpu,
-    Search
+    Search,
+    Sliders
 } from "lucide-react";
 
 interface SeparationPanelProps {
-    onSeparate: (description: string, mode: "extract" | "remove", modelSize: string) => void;
+    onSeparate: (description: string, mode: "extract" | "remove", modelSize: string, chunkDuration: number) => void;
     isAuthenticated: boolean;
     onAuthRequired: () => void;
     hasRegion: boolean;
@@ -44,6 +45,7 @@ export default function SeparationPanel({
     const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null);
     const [mode, setMode] = useState<"extract" | "remove">("extract");
     const [modelSize, setModelSize] = useState<"small" | "base" | "large">("base");
+    const [chunkDuration, setChunkDuration] = useState(25);
 
     const handleQuickSelect = (prompt: string) => {
         setSelectedPrompt(prompt);
@@ -59,7 +61,7 @@ export default function SeparationPanel({
         const prompt = customPrompt || selectedPrompt;
         if (!prompt) return;
 
-        onSeparate(prompt, mode, modelSize);
+        onSeparate(prompt, mode, modelSize, chunkDuration);
     };
 
     const activePrompt = customPrompt || selectedPrompt;
@@ -195,7 +197,7 @@ export default function SeparationPanel({
                     </div>
                 </div>
 
-                {/* Settings Row */}
+                {/* Settings Grid */}
                 <div style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",
@@ -254,7 +256,7 @@ export default function SeparationPanel({
                         </div>
                     </div>
 
-                    {/* Model Selector - Horizontal */}
+                    {/* Model Selector */}
                     <div>
                         <label style={{
                             display: "flex",
@@ -292,6 +294,82 @@ export default function SeparationPanel({
                             ))}
                         </div>
                     </div>
+                </div>
+
+                {/* Chunk Duration Slider */}
+                <div
+                    style={{
+                        marginBottom: "20px",
+                        padding: "16px",
+                        borderRadius: "12px",
+                        background: "var(--bg-tertiary)",
+                        border: "1px solid var(--border-color)"
+                    }}
+                >
+                    <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: "12px"
+                    }}>
+                        <label style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            fontSize: "0.8rem",
+                            fontWeight: 500,
+                            color: "var(--text-muted)"
+                        }}>
+                            <Sliders style={{ width: "14px", height: "14px" }} />
+                            Chunk Duration
+                        </label>
+                        <span style={{
+                            fontSize: "0.9rem",
+                            fontWeight: 600,
+                            color: "var(--ghost-primary)",
+                            fontFamily: "monospace"
+                        }}>
+                            {chunkDuration}s
+                        </span>
+                    </div>
+
+                    <input
+                        type="range"
+                        min="5"
+                        max="60"
+                        step="5"
+                        value={chunkDuration}
+                        onChange={(e) => setChunkDuration(Number(e.target.value))}
+                        style={{
+                            width: "100%",
+                            height: "6px",
+                            borderRadius: "3px",
+                            background: `linear-gradient(to right, var(--ghost-primary) ${((chunkDuration - 5) / 55) * 100}%, var(--bg-secondary) ${((chunkDuration - 5) / 55) * 100}%)`,
+                            cursor: "pointer",
+                            appearance: "none",
+                            outline: "none"
+                        }}
+                    />
+
+                    <div style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginTop: "8px",
+                        fontSize: "0.65rem",
+                        color: "var(--text-muted)"
+                    }}>
+                        <span>5s (Low VRAM)</span>
+                        <span>60s (Fast)</span>
+                    </div>
+
+                    <p style={{
+                        marginTop: "10px",
+                        fontSize: "0.7rem",
+                        color: "var(--text-muted)",
+                        lineHeight: 1.4
+                    }}>
+                        ⚡ Smaller chunks = Less VRAM usage, but slower processing & may affect quality at boundaries
+                    </p>
                 </div>
 
                 {/* Auth Warning */}

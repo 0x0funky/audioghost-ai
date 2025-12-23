@@ -165,7 +165,8 @@ def separate_audio_task(
     description: str,
     mode: str = "extract",
     anchors: Optional[List] = None,
-    model_size: str = "base"  # Changed default to base (better quality than small)
+    model_size: str = "base",
+    chunk_duration: float = 25.0
 ):
     """
     Separate audio using SAM Audio Lite (memory optimized)
@@ -176,6 +177,7 @@ def separate_audio_task(
         mode: "extract" or "remove"
         anchors: Optional temporal anchors [["+", start, end], ...]
         model_size: Model size (small/base/large)
+        chunk_duration: Audio chunk duration in seconds (5-60)
     
     Returns:
         Dictionary with paths to output files
@@ -235,8 +237,8 @@ def separate_audio_task(
         audio_duration = audio.shape[1] / sample_rate
         print(f"[DEBUG] Audio duration: {audio_duration:.2f}s")
         
-        # Chunking settings
-        CHUNK_DURATION = 25.0  # 25 seconds per chunk
+        # Chunking settings (from parameter, clamped to 5-60)
+        CHUNK_DURATION = max(5.0, min(60.0, chunk_duration))
         MAX_CHUNK_SAMPLES = int(sample_rate * CHUNK_DURATION)
         
         # Check if chunking is needed
