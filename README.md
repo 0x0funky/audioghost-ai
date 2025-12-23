@@ -146,7 +146,7 @@ Navigate to `http://localhost:3000`
 
 ## Performance Benchmarks
 
-> Tested on RTX 4080 with 4:26 audio (11 chunks @ 25s each)
+> Tested on RTX 4090 with 4:26 audio (11 chunks @ 25s each)
 
 ### VRAM Usage (Lite Mode)
 
