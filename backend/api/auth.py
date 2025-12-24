@@ -1,20 +1,15 @@
 """
 Authentication API - HuggingFace Token Management
 """
-import os
-from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from huggingface_hub import HfApi, hf_hub_download
 from huggingface_hub.utils import HfHubHTTPError
 
-router = APIRouter()
+from config import settings
 
-# Token storage path (use absolute path based on this file's location)
-BACKEND_DIR = Path(__file__).parent.parent
-TOKEN_FILE = BACKEND_DIR / ".hf_token"
-CHECKPOINTS_DIR = BACKEND_DIR / "checkpoints"
+router = APIRouter()
 
 
 class TokenRequest(BaseModel):
@@ -24,26 +19,38 @@ class AuthStatus(BaseModel):
     authenticated: bool
     model_downloaded: bool
     model_name: Optional[str] = None
+    device: Optional[str] = None
 
 
 def get_saved_token() -> Optional[str]:
-    """Get saved HuggingFace token"""
-    if TOKEN_FILE.exists():
-        return TOKEN_FILE.read_text().strip()
-    return os.environ.get("HF_TOKEN")
+    """Get saved HuggingFace token (from env var or file)"""
+    return settings.get_hf_token()
 
 
 def save_token(token: str):
     """Save HuggingFace token"""
-    TOKEN_FILE.write_text(token)
+    settings.save_hf_token(token)
 
 
 def check_model_downloaded() -> bool:
     """Check if SAM Audio model is downloaded"""
-    # Check for common model files
-    model_files = list(CHECKPOINTS_DIR.glob("*.safetensors")) + \
-                  list(CHECKPOINTS_DIR.glob("*.bin"))
+    # Check for common model files in checkpoints directory
+    model_files = list(settings.CHECKPOINTS_DIR.glob("*.safetensors")) + \
+                  list(settings.CHECKPOINTS_DIR.glob("*.bin"))
     return len(model_files) > 0
+
+
+def get_device_info() -> str:
+    """Get current device information for display."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return f"CUDA ({torch.cuda.get_device_name(0)})"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "Apple MPS"
+        return "CPU"
+    except Exception:
+        return "Unknown"
 
 
 @router.get("/status", response_model=AuthStatus)
@@ -63,7 +70,8 @@ async def get_auth_status():
     return AuthStatus(
         authenticated=authenticated,
         model_downloaded=check_model_downloaded(),
-        model_name="facebook/sam-audio-large" if check_model_downloaded() else None
+        model_name="facebook/sam-audio-large" if check_model_downloaded() else None,
+        device=get_device_info()
     )
 
 
@@ -126,7 +134,5 @@ async def download_model():
 @router.post("/logout")
 async def logout():
     """Clear saved token"""
-    if TOKEN_FILE.exists():
-        TOKEN_FILE.unlink()
-    
+    settings.clear_hf_token()
     return {"success": True, "message": "Logged out"}

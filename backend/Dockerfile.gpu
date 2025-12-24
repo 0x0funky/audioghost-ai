@@ -1,0 +1,73 @@
+# ==============================================
+# AudioGhost AI - Backend Dockerfile (GPU Mode)
+# ==============================================
+# This Dockerfile builds the backend with CUDA support
+# Requires NVIDIA Container Toolkit on the host
+
+FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies and Python including FFmpeg with shared libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
+    ffmpeg \
+    libavcodec-dev \
+    libavformat-dev \
+    libavutil-dev \
+    libavfilter-dev \
+    libavdevice-dev \
+    libswscale-dev \
+    libswresample-dev \
+    libsndfile1 \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symlinks for python
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3
+
+# Upgrade pip
+RUN python -m pip install --upgrade pip
+
+# Install PyTorch with CUDA support
+# SAM-Audio requires PyTorch 2.5+ for flex_attention
+RUN pip install --no-cache-dir \
+    torch==2.5.1 \
+    torchvision==0.20.1 \
+    torchaudio==2.5.1 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# Install SAM Audio
+RUN pip install --no-cache-dir git+https://github.com/facebookresearch/sam-audio.git
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create directories for volumes
+RUN mkdir -p uploads outputs /app/hf_cache
+
+# Set environment variables
+ENV HF_HOME=/app/hf_cache
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Expose API port
+EXPOSE 8000
+
+# Default command (can be overridden in docker-compose)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+

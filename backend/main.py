@@ -1,22 +1,12 @@
 """
 AudioGhost AI - FastAPI Backend
 """
-import os
-from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api import auth, separate, tasks
-
-# Create necessary directories
-UPLOAD_DIR = Path("uploads")
-OUTPUT_DIR = Path("outputs")
-CHECKPOINTS_DIR = Path("../checkpoints")
-
-UPLOAD_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
-CHECKPOINTS_DIR.mkdir(exist_ok=True)
+from config import settings
 
 app = FastAPI(
     title="AudioGhost AI",
@@ -24,17 +14,17 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS Configuration
+# CORS Configuration (configurable via CORS_ORIGINS env var)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Mount static files for downloads
-app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
+app.mount("/outputs", StaticFiles(directory=str(settings.OUTPUT_DIR)), name="outputs")
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])

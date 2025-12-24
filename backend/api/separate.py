@@ -9,10 +9,11 @@ from pydantic import BaseModel
 
 from workers.celery_app import celery_app
 from workers.tasks import separate_audio_task
+from config import settings
 
 router = APIRouter()
 
-UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR = settings.UPLOAD_DIR
 
 
 class SeparationRequest(BaseModel):

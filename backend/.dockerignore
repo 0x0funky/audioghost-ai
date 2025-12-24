@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+.eggs/
+*.egg
+
+# Data directories (will be mounted as volumes)
+uploads/
+outputs/
+checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile*
+.dockerignore
+
+# Tests
+tests/
+pytest.ini
+.coverage
+
+# Local files
+.hf_token
+*.log
+
+# macOS
+.DS_Store
+

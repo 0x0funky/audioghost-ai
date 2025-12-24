@@ -9,10 +9,11 @@ from pydantic import BaseModel
 from celery.result import AsyncResult
 
 from workers.celery_app import celery_app
+from config import settings
 
 router = APIRouter()
 
-OUTPUT_DIR = Path("outputs")
+OUTPUT_DIR = settings.OUTPUT_DIR
 
 
 class TaskStatus(BaseModel):

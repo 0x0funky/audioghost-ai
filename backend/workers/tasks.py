@@ -12,11 +12,44 @@ from celery import current_task
 
 from workers.celery_app import celery_app
 
-# Add parent directory to path for SAM Audio imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import settings
 
-OUTPUT_DIR = Path("outputs")
+# Use configured output directory
+OUTPUT_DIR = settings.OUTPUT_DIR
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+
+def get_best_device() -> str:
+    """
+    Detect the best available device based on settings and hardware.
+    
+    Priority: CUDA > MPS > CPU (unless overridden by DEVICE setting)
+    """
+    import torch
+    
+    device_setting = settings.DEVICE.lower()
+    
+    if device_setting == "cuda":
+        if torch.cuda.is_available():
+            return "cuda"
+        raise RuntimeError("CUDA requested but not available")
+    
+    elif device_setting == "mps":
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        raise RuntimeError("MPS requested but not available")
+    
+    elif device_setting == "cpu":
+        return "cpu"
+    
+    else:  # auto
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
 
 # Global model cache to avoid reloading
 _model_cache = {}
@@ -158,6 +191,50 @@ def cleanup_gpu_memory():
         gc.collect()
 
 
+def load_audio_any_format(audio_path: str):
+    """
+    Load audio from a file path without relying on torchcodec.
+
+    - First tries torchaudio.load() (uses available backend, e.g. soundfile).
+    - If that fails (common for mp3 when only soundfile backend is available),
+      falls back to pydub+ffmpeg.
+
+    Returns:
+        (waveform, sample_rate) where waveform is torch.Tensor [channels, time]
+    """
+    import torch
+    import torchaudio
+
+    try:
+        return torchaudio.load(audio_path)
+    except Exception as e:
+        print(f"[WARN] torchaudio.load failed for '{audio_path}': {e}")
+        print("[WARN] Falling back to pydub/ffmpeg decoder...")
+
+        from pydub import AudioSegment  # uses ffmpeg binary
+        import numpy as np
+
+        seg = AudioSegment.from_file(audio_path)
+        sample_rate = int(seg.frame_rate)
+
+        # Convert to mono to match downstream pipeline
+        seg = seg.set_channels(1)
+
+        sample_width = int(seg.sample_width)  # bytes per sample
+        samples = np.array(seg.get_array_of_samples())
+
+        # Normalize to [-1, 1] float32
+        if sample_width == 1:
+            # 8-bit audio is typically unsigned
+            samples = samples.astype(np.int16) - 128
+            max_val = 128.0
+        else:
+            max_val = float(1 << (8 * sample_width - 1))
+
+        waveform = torch.from_numpy(samples.astype(np.float32) / max_val).unsqueeze(0)
+        return waveform, sample_rate
+
+
 @celery_app.task(bind=True)
 def separate_audio_task(
     self,
@@ -190,7 +267,8 @@ def separate_audio_task(
     from huggingface_hub import login
     
     task_id = self.request.id
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_best_device()
+    print(f"[INFO] Using device: {device}")
     
     # Debug: Show received parameter
     print(f"[DEBUG] use_float32 parameter received: {use_float32} (type: {type(use_float32).__name__})")
@@ -209,15 +287,11 @@ def separate_audio_task(
     try:
         update_progress(5, "Initializing...")
         
-        # Load HuggingFace token
-        backend_dir = Path(__file__).parent.parent
-        token_file = backend_dir / ".hf_token"
-        if token_file.exists():
-            with open(token_file, "r") as f:
-                hf_token = f.read().strip()
-            login(token=hf_token)
-        else:
-            raise Exception("HuggingFace token not found. Please authenticate first.")
+        # Load HuggingFace token from config (supports env var or file)
+        hf_token = settings.get_hf_token()
+        if not hf_token:
+            raise Exception("HuggingFace token not found. Please authenticate first or set HF_TOKEN environment variable.")
+        login(token=hf_token)
         
         # Select model based on size
         model_name = f"facebook/sam-audio-{model_size}"
@@ -236,7 +310,7 @@ def separate_audio_task(
         sample_rate = processor.audio_sampling_rate
         
         # Load and preprocess audio
-        audio, orig_sr = torchaudio.load(audio_path)
+        audio, orig_sr = load_audio_any_format(audio_path)
         if orig_sr != sample_rate:
             resampler = torchaudio.transforms.Resample(orig_sr, sample_rate)
             audio = resampler(audio)
@@ -310,8 +384,11 @@ def separate_audio_task(
             update_progress(50, "Running separation...")
             
             # Process entire audio at once
+            # IMPORTANT: Pass the already-loaded audio tensor instead of a file path.
+            # This avoids SAM-Audio's internal loader path that can depend on torchcodec.
+            audio_tensor = audio.to(device, dtype)
             batch = processor(
-                audios=[audio_path],
+                audios=[audio_tensor],
                 descriptions=[description]
             ).to(device)
             

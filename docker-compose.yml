@@ -1,14 +1,211 @@
-version: '3.8'
+# ==============================================
+# AudioGhost AI - Docker Compose Configuration
+# ==============================================
+# 
+# Usage:
+#   CPU Mode (default):  docker compose up --build
+#   GPU Mode:            docker compose --profile gpu up --build
+#   
+# First time setup:
+#   1. Copy .env.example to .env
+#   2. Add your HuggingFace token to .env (HF_TOKEN=hf_xxx)
+#   3. Run docker compose up --build
+#   4. Open http://localhost:3000
+#
+# Requirements:
+#   - Docker & Docker Compose
+#   - For GPU mode: NVIDIA Container Toolkit
+#     - Linux: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+#     - Windows: WSL2 + NVIDIA drivers
+# ==============================================
 
 services:
+  # ===========================================
+  # Redis - Message Broker & Result Backend
+  # ===========================================
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     container_name: audioghost-redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
+  # ===========================================
+  # API - FastAPI Backend (CPU Mode)
+  # ===========================================
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: audioghost-api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - UPLOAD_DIR=/app/data/uploads
+      - OUTPUT_DIR=/app/data/outputs
+      - HF_HOME=/app/data/hf_cache
+      - HF_TOKEN_FILE=/app/data/.hf_token
+      - HF_TOKEN=${HF_TOKEN:-}
+      - DEVICE=cpu
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000
+    volumes:
+      - audioghost_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    profiles:
+      - cpu
+      - ""  # Default profile
+
+  # ===========================================
+  # Worker - Celery Worker (CPU Mode)
+  # ===========================================
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: audioghost-worker
+    command: celery -A workers.celery_app worker --loglevel=info --pool=solo --concurrency=1
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - UPLOAD_DIR=/app/data/uploads
+      - OUTPUT_DIR=/app/data/outputs
+      - HF_HOME=/app/data/hf_cache
+      - HF_TOKEN_FILE=/app/data/.hf_token
+      - HF_TOKEN=${HF_TOKEN:-}
+      - DEVICE=cpu
+      - CPU_DEFAULT_MODEL_SIZE=small
+    volumes:
+      - audioghost_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - cpu
+      - ""  # Default profile
+
+  # ===========================================
+  # API - FastAPI Backend (GPU Mode)
+  # ===========================================
+  api-gpu:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.gpu
+    container_name: audioghost-api-gpu
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - UPLOAD_DIR=/app/data/uploads
+      - OUTPUT_DIR=/app/data/outputs
+      - HF_HOME=/app/data/hf_cache
+      - HF_TOKEN_FILE=/app/data/.hf_token
+      - HF_TOKEN=${HF_TOKEN:-}
+      - DEVICE=auto
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000
+    volumes:
+      - audioghost_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    profiles:
+      - gpu
+
+  # ===========================================
+  # Worker - Celery Worker (GPU Mode)
+  # ===========================================
+  worker-gpu:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.gpu
+    container_name: audioghost-worker-gpu
+    command: celery -A workers.celery_app worker --loglevel=info --pool=solo --concurrency=1
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - UPLOAD_DIR=/app/data/uploads
+      - OUTPUT_DIR=/app/data/outputs
+      - HF_HOME=/app/data/hf_cache
+      - HF_TOKEN_FILE=/app/data/.hf_token
+      - HF_TOKEN=${HF_TOKEN:-}
+      - DEVICE=auto
+    volumes:
+      - audioghost_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      api-gpu:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    profiles:
+      - gpu
+
+  # ===========================================
+  # Frontend - Next.js Application
+  # ===========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # API URL as seen from browser (host machine)
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: audioghost-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+# ===========================================
+# Volumes
+# ===========================================
 volumes:
   redis_data:
+    driver: local
+  audioghost_data:
+    driver: local
+    # This volume stores:
+    # - uploads/: Uploaded audio files
+    # - outputs/: Processed audio files
+    # - hf_cache/: HuggingFace model cache (prevents re-download)

@@ -8,6 +8,7 @@ import WaveformEditor from "@/components/WaveformEditor";
 import SeparationPanel from "@/components/SeparationPanel";
 import ProgressTracker from "@/components/ProgressTracker";
 import StemMixer from "@/components/StemMixer";
+import { API } from "@/lib/api";
 
 interface TaskResult {
   original_path: string;
@@ -34,7 +35,10 @@ export default function Home() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(true);
-  const [selectedRegion, setSelectedRegion] = useState<{ start: number; end: number } | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
 
   // Persistent separation settings (won't reset on "New")
   const [separationSettings, setSeparationSettings] = useState({
@@ -63,7 +67,7 @@ export default function Home() {
 
   const checkAuthStatus = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/auth/status");
+      const res = await fetch(API.auth.status());
       const data = await res.json();
       setIsAuthenticated(data.authenticated);
     } catch (error) {
@@ -125,7 +129,7 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch("http://localhost:8000/api/separate/", {
+      const res = await fetch(API.separate.create(), {
         method: "POST",
         body: formData,
       });
@@ -144,7 +148,7 @@ export default function Home() {
       pollTaskStatus(data.task_id);
     } catch (error) {
       console.error("Failed to submit separation task:", error);
-      setTask(prev => ({
+      setTask((prev) => ({
         ...prev,
         status: "failed",
         message: "Failed to submit task",
@@ -155,7 +159,7 @@ export default function Home() {
   const pollTaskStatus = async (taskId: string) => {
     const poll = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/tasks/${taskId}`);
+        const res = await fetch(API.tasks.status(taskId));
         const data = await res.json();
 
         setTask({
@@ -182,7 +186,7 @@ export default function Home() {
       style={{
         minHeight: "100vh",
         background: "var(--bg-primary)",
-        width: "100%"
+        width: "100%",
       }}
     >
       <Header
@@ -197,21 +201,34 @@ export default function Home() {
         style={{
           maxWidth: "1200px",
           margin: "0 auto",
-          padding: "32px 24px"
+          padding: "32px 24px",
         }}
       >
         {/* Hero Section */}
         {!audioUrl && (
           <div style={{ textAlign: "center", marginBottom: "48px" }}>
-            <h1 style={{ fontSize: "3rem", fontWeight: 800, marginBottom: "16px" }}>
+            <h1
+              style={{
+                fontSize: "3rem",
+                fontWeight: 800,
+                marginBottom: "16px",
+              }}
+            >
               <span className="gradient-text">AudioGhost</span>{" "}
               <span style={{ color: "var(--text-primary)" }}>AI</span>
             </h1>
-            <p style={{ fontSize: "1.25rem", marginBottom: "8px", color: "var(--text-secondary)" }}>
+            <p
+              style={{
+                fontSize: "1.25rem",
+                marginBottom: "8px",
+                color: "var(--text-secondary)",
+              }}
+            >
               AI-Powered Object-Oriented Audio Separation
             </p>
             <p style={{ color: "var(--text-muted)" }}>
-              Describe the sound you want to extract or remove using natural language
+              Describe the sound you want to extract or remove using natural
+              language
             </p>
           </div>
         )}
@@ -219,17 +236,26 @@ export default function Home() {
         {/* Main Content */}
         <div style={{ display: "grid", gap: "24px" }}>
           {/* Upload Zone */}
-          {!audioUrl && (
-            <AudioUploader onFileUpload={handleFileUpload} />
-          )}
-
+          {!audioUrl && <AudioUploader onFileUpload={handleFileUpload} />}
 
           {/* Waveform Editor with Reset Button */}
           {audioUrl && (
             <>
               {/* Reset Button */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h2 style={{ fontSize: "1.25rem", fontWeight: 600, color: "var(--text-primary)" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <h2
+                  style={{
+                    fontSize: "1.25rem",
+                    fontWeight: 600,
+                    color: "var(--text-primary)",
+                  }}
+                >
                   Audio Editor
                 </h2>
                 <button
@@ -245,10 +271,14 @@ export default function Home() {
                     display: "flex",
                     alignItems: "center",
                     gap: "8px",
-                    transition: "all 0.2s ease"
+                    transition: "all 0.2s ease",
                   }}
-                  onMouseOver={(e) => e.currentTarget.style.background = "var(--bg-secondary)"}
-                  onMouseOut={(e) => e.currentTarget.style.background = "var(--bg-tertiary)"}
+                  onMouseOver={(e) =>
+                    (e.currentTarget.style.background = "var(--bg-secondary)")
+                  }
+                  onMouseOut={(e) =>
+                    (e.currentTarget.style.background = "var(--bg-tertiary)")
+                  }
                 >
                   ↩ Upload New File
                 </button>
@@ -260,7 +290,6 @@ export default function Home() {
               />
             </>
           )}
-
 
           {/* Separation Controls */}
           {audioUrl && task.status === "idle" && (
@@ -306,11 +335,21 @@ export default function Home() {
           {/* Error State */}
           {task.status === "failed" && (
             <div className="glass-card p-6 text-center">
-              <div className="text-red-400 text-xl mb-2">❌ Separation Failed</div>
+              <div className="text-red-400 text-xl mb-2">
+                ❌ Separation Failed
+              </div>
               <p style={{ color: "var(--text-secondary)" }}>{task.message}</p>
               <button
                 className="btn-primary mt-4"
-                onClick={() => setTask({ taskId: null, status: "idle", progress: 0, message: "", result: null })}
+                onClick={() =>
+                  setTask({
+                    taskId: null,
+                    status: "idle",
+                    progress: 0,
+                    message: "",
+                    result: null,
+                  })
+                }
               >
                 Try Again
               </button>
