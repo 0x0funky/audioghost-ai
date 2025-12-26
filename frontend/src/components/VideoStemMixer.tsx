@@ -122,7 +122,7 @@ export default function VideoStemMixer({
                     ws.setMuted(muted[track.id]);
                 });
 
-                // Sync seeking across all tracks and video
+                // When user clicks on waveform - sync video and other tracks
                 ws.on("seeking", () => {
                     if (isSeeking.current) return;
                     isSeeking.current = true;
@@ -130,7 +130,7 @@ export default function VideoStemMixer({
                     const progress = ws.getCurrentTime() / ws.getDuration();
                     const newTime = ws.getCurrentTime();
 
-                    // Sync video
+                    // Sync video - video's 'seeked' event will reset isSeeking
                     if (videoRef.current) {
                         videoRef.current.currentTime = newTime;
                     }
@@ -143,10 +143,7 @@ export default function VideoStemMixer({
                     });
 
                     setCurrentTime(newTime);
-
-                    setTimeout(() => {
-                        isSeeking.current = false;
-                    }, 50);
+                    // Note: isSeeking is reset by video's 'seeked' event
                 });
 
                 wavesurferRefs.current[track.id] = ws;
@@ -186,7 +183,7 @@ export default function VideoStemMixer({
         const handleEnded = () => {
             setIsPlaying(false);
             setCurrentTime(0);
-            // IMPORTANT: Pause all audio tracks when video ends
+            // Pause all audio tracks when video ends
             Object.values(wavesurferRefs.current).forEach(w => {
                 if (w) {
                     w.pause();
@@ -195,37 +192,64 @@ export default function VideoStemMixer({
             });
         };
 
+        // When video starts seeking (user dragging video scrubber)
+        const handleSeeking = () => {
+            isSeeking.current = true;
+        };
+
+        // When video finishes seeking - sync all audio tracks to video position
+        const handleSeeked = () => {
+            const progress = video.currentTime / video.duration;
+            // Sync all audio tracks to the new video position
+            Object.values(wavesurferRefs.current).forEach(ws => {
+                if (ws) {
+                    ws.seekTo(progress);
+                }
+            });
+            setCurrentTime(video.currentTime);
+            // Small delay before allowing new syncs
+            setTimeout(() => {
+                isSeeking.current = false;
+            }, 100);
+        };
+
         video.addEventListener("timeupdate", handleTimeUpdate);
         video.addEventListener("loadedmetadata", handleLoadedMetadata);
         video.addEventListener("ended", handleEnded);
+        video.addEventListener("seeking", handleSeeking);
+        video.addEventListener("seeked", handleSeeked);
 
         return () => {
             video.removeEventListener("timeupdate", handleTimeUpdate);
             video.removeEventListener("loadedmetadata", handleLoadedMetadata);
             video.removeEventListener("ended", handleEnded);
+            video.removeEventListener("seeking", handleSeeking);
+            video.removeEventListener("seeked", handleSeeked);
         };
     }, []);
 
-    // Continuous sync effect
+    // Continuous sync effect - keeps audio tracks aligned with video during playback
     useEffect(() => {
         let animationFrameId: number;
-        const syncInterval = 100;
+        const syncInterval = 150; // Check less frequently
         let lastSync = 0;
 
         const syncTracks = (timestamp: number) => {
-            if (isPlaying && timestamp - lastSync > syncInterval) {
+            // Skip sync during seeking to prevent interference
+            if (isPlaying && !isSeeking.current && timestamp - lastSync > syncInterval) {
                 lastSync = timestamp;
                 const video = videoRef.current;
-                if (video) {
+                if (video && !video.seeking) {
                     const masterTime = video.currentTime;
                     const masterDuration = video.duration;
                     const progress = masterTime / masterDuration;
 
-                    // Sync audio tracks to video
-                    Object.entries(wavesurferRefs.current).forEach(([id, ws]) => {
+                    // Sync audio tracks to video only if drift is significant
+                    Object.values(wavesurferRefs.current).forEach(ws => {
                         if (ws) {
                             const trackTime = ws.getCurrentTime();
-                            if (Math.abs(trackTime - masterTime) > 0.05) {
+                            // Only sync if drift is more than 0.15 seconds
+                            if (Math.abs(trackTime - masterTime) > 0.15) {
                                 ws.seekTo(progress);
                             }
                         }
@@ -304,18 +328,18 @@ export default function VideoStemMixer({
 
         isSeeking.current = true;
 
-        // Seek video
+        // Seek video - video's 'seeked' event will reset isSeeking and sync audio
         if (videoRef.current) {
             videoRef.current.currentTime = newTime;
         }
 
-        // Seek all audio tracks
+        // Also seek audio tracks immediately for visual feedback
         Object.values(wavesurferRefs.current).forEach(ws => {
             if (ws) ws.seekTo(progress);
         });
 
         setCurrentTime(newTime);
-        isSeeking.current = false;
+        // Note: isSeeking is reset by video's 'seeked' event
     }, [duration]);
 
     const downloadTrack = (trackId: string, label: string) => {

@@ -15,6 +15,7 @@ https://github.com/user-attachments/assets/49248e25-0c56-46ab-a821-2de7f7016bb6
 ## Features
 
 - 🎯 **Text-Guided Separation** - Describe what you want to extract: "vocals", "drums", "a dog barking"
+- 🎬 **Video Upload Support** - Upload videos and extract/remove audio sources (audio extraction only, not vision-based)
 - 🚀 **Memory Optimized** - Lite mode reduces VRAM from ~11GB to ~4GB
 - 🎨 **Modern UI** - Glassmorphism design with waveform visualization
 - ⚡ **Real-time Progress** - Track separation progress in real-time
@@ -22,8 +23,7 @@ https://github.com/user-attachments/assets/49248e25-0c56-46ab-a821-2de7f7016bb6
 
 ## 🗺️ Roadmap
 
-- 🎬 **Video Support** - Upload videos and separate audio sources visually
-- 🖱️ **Visual Prompting** - Click on video to select sound sources (Integration with [SAM 3](https://github.com/facebookresearch/sam2))
+- 🖱️ **Visual Prompting** - Click on video to select sound sources visually (Integration with [SAM 2](https://github.com/facebookresearch/sam2))
 
 ## Architecture
 
