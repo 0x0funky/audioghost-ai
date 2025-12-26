@@ -234,11 +234,10 @@ export default function Home() {
             <AudioUploader onFileUpload={handleFileUpload} />
           )}
 
-
-          {/* Waveform Editor (Audio) or Video Preview */}
-          {audioUrl && (
+          {/* Waveform Editor (Audio) or Video Preview - Hide when results are shown */}
+          {audioUrl && task.status !== "completed" && (
             <>
-              {/* Reset Button */}
+              {/* Section Header with Upload Button */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <h2 style={{ fontSize: "1.25rem", fontWeight: 600, color: "var(--text-primary)" }}>
                   {isVideo ? "Video Preview" : "Audio Editor"}
@@ -337,6 +336,7 @@ export default function Home() {
                 audioDuration={task.result.audio_duration}
                 processingTime={task.result.processing_time}
                 modelSize={task.result.model_size}
+                onUploadNew={handleReset}
                 onNewSeparation={() => {
                   setTask({
                     taskId: null,
@@ -354,6 +354,7 @@ export default function Home() {
                 audioDuration={task.result.audio_duration}
                 processingTime={task.result.processing_time}
                 modelSize={task.result.model_size}
+                onUploadNew={handleReset}
                 onNewSeparation={() => {
                   setTask({
                     taskId: null,

@@ -20,13 +20,14 @@ interface StemMixerProps {
     taskId: string;
     description: string;
     onNewSeparation: () => void;
+    onUploadNew?: () => void;
     audioDuration?: number;
     processingTime?: number;
     modelSize?: string;
 }
 
 interface Track {
-    id: "original" | "ghost" | "clean";
+    id: "ghost" | "clean";
     label: string;
     icon: LucideIcon;
     color: string;
@@ -34,13 +35,6 @@ interface Track {
 }
 
 const TRACKS: Track[] = [
-    {
-        id: "original",
-        label: "Original Sound",
-        icon: Music,
-        color: "#10B981",
-        waveColor: "#10B981"
-    },
     {
         id: "ghost",
         label: "Isolated Sound",
@@ -61,6 +55,7 @@ export default function StemMixer({
     taskId,
     description,
     onNewSeparation,
+    onUploadNew,
     audioDuration,
     processingTime,
     modelSize
@@ -69,12 +64,10 @@ export default function StemMixer({
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [muted, setMuted] = useState<Record<string, boolean>>({
-        original: true,
         ghost: false,
         clean: false,
     });
     const [isReady, setIsReady] = useState<Record<string, boolean>>({
-        original: false,
         ghost: false,
         clean: false,
     });
@@ -117,27 +110,30 @@ export default function StemMixer({
 
                 ws.on("ready", () => {
                     setIsReady(prev => ({ ...prev, [track.id]: true }));
-                    if (track.id === "original") {
+                    if (track.id === "ghost") {
                         setDuration(ws.getDuration());
                     }
                     ws.setMuted(muted[track.id]);
                 });
 
                 ws.on("audioprocess", () => {
-                    if (!isSeeking.current && track.id === "original") {
+                    if (!isSeeking.current && track.id === "ghost") {
                         setCurrentTime(ws.getCurrentTime());
                     }
                 });
 
                 ws.on("finish", () => {
-                    // Only trigger finish logic from the "original" track
+                    // Only trigger finish logic from the "ghost" track (master)
                     // to prevent multiple finish events causing desync
-                    if (track.id === "original") {
+                    if (track.id === "ghost") {
                         setIsPlaying(false);
                         setCurrentTime(0);
                         // Seek all tracks back to start synchronized
                         Object.values(wavesurferRefs.current).forEach(w => {
-                            if (w) w.seekTo(0);
+                            if (w) {
+                                w.pause();
+                                w.seekTo(0);
+                            }
                         });
                     }
                 });
@@ -348,25 +344,47 @@ export default function StemMixer({
                         "{description}"
                     </p>
                 </div>
-                <button
-                    onClick={onNewSeparation}
-                    style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        padding: "8px 14px",
-                        borderRadius: "8px",
-                        background: "var(--bg-tertiary)",
-                        color: "var(--text-secondary)",
-                        border: "1px solid var(--border-color)",
-                        cursor: "pointer",
-                        fontSize: "0.8rem",
-                        fontWeight: 500
-                    }}
-                >
-                    <RefreshCw style={{ width: "14px", height: "14px" }} />
-                    New
-                </button>
+                <div style={{ display: "flex", gap: "8px" }}>
+                    {onUploadNew && (
+                        <button
+                            onClick={onUploadNew}
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                padding: "8px 14px",
+                                borderRadius: "8px",
+                                background: "var(--bg-tertiary)",
+                                color: "var(--text-secondary)",
+                                border: "1px solid var(--border-color)",
+                                cursor: "pointer",
+                                fontSize: "0.8rem",
+                                fontWeight: 500
+                            }}
+                        >
+                            ↩ Upload New File
+                        </button>
+                    )}
+                    <button
+                        onClick={onNewSeparation}
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            padding: "8px 14px",
+                            borderRadius: "8px",
+                            background: "var(--bg-tertiary)",
+                            color: "var(--text-secondary)",
+                            border: "1px solid var(--border-color)",
+                            cursor: "pointer",
+                            fontSize: "0.8rem",
+                            fontWeight: 500
+                        }}
+                    >
+                        <RefreshCw style={{ width: "14px", height: "14px" }} />
+                        New
+                    </button>
+                </div>
             </div>
 
             {/* Stats Bar */}

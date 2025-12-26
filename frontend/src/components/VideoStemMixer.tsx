@@ -20,6 +20,7 @@ interface VideoStemMixerProps {
     taskId: string;
     description: string;
     onNewSeparation: () => void;
+    onUploadNew?: () => void;
     audioDuration?: number;
     processingTime?: number;
     modelSize?: string;
@@ -54,6 +55,7 @@ export default function VideoStemMixer({
     taskId,
     description,
     onNewSeparation,
+    onUploadNew,
     audioDuration,
     processingTime,
     modelSize
@@ -372,25 +374,47 @@ export default function VideoStemMixer({
                         "{description}"
                     </p>
                 </div>
-                <button
-                    onClick={onNewSeparation}
-                    style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        padding: "8px 14px",
-                        borderRadius: "8px",
-                        background: "var(--bg-tertiary)",
-                        color: "var(--text-secondary)",
-                        border: "1px solid var(--border-color)",
-                        cursor: "pointer",
-                        fontSize: "0.8rem",
-                        fontWeight: 500
-                    }}
-                >
-                    <RefreshCw style={{ width: "14px", height: "14px" }} />
-                    New
-                </button>
+                <div style={{ display: "flex", gap: "8px" }}>
+                    {onUploadNew && (
+                        <button
+                            onClick={onUploadNew}
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                padding: "8px 14px",
+                                borderRadius: "8px",
+                                background: "var(--bg-tertiary)",
+                                color: "var(--text-secondary)",
+                                border: "1px solid var(--border-color)",
+                                cursor: "pointer",
+                                fontSize: "0.8rem",
+                                fontWeight: 500
+                            }}
+                        >
+                            ↩ Upload New File
+                        </button>
+                    )}
+                    <button
+                        onClick={onNewSeparation}
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            padding: "8px 14px",
+                            borderRadius: "8px",
+                            background: "var(--bg-tertiary)",
+                            color: "var(--text-secondary)",
+                            border: "1px solid var(--border-color)",
+                            cursor: "pointer",
+                            fontSize: "0.8rem",
+                            fontWeight: 500
+                        }}
+                    >
+                        <RefreshCw style={{ width: "14px", height: "14px" }} />
+                        New
+                    </button>
+                </div>
             </div>
 
             {/* Video Player */}
