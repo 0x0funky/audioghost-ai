@@ -67,6 +67,8 @@ export default function VideoStemMixer({
         ghost: false,
         clean: false,
     });
+    const [videoMuted, setVideoMuted] = useState(true);
+    const [showVideoDownload, setShowVideoDownload] = useState(false);
     const [isReady, setIsReady] = useState<Record<string, boolean>>({
         video: false,
         ghost: false,
@@ -351,6 +353,17 @@ export default function VideoStemMixer({
         document.body.removeChild(link);
     };
 
+    const downloadVideoWithAudio = (audioType: "original" | "ghost" | "clean") => {
+        const link = document.createElement("a");
+        link.href = `http://localhost:8000/api/tasks/${taskId}/download-video-with-audio/${audioType}`;
+        const labels = { original: "original", ghost: "isolated", clean: "without_isolated" };
+        link.download = `${taskId}_${labels[audioType]}_video.mp4`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setShowVideoDownload(false);
+    };
+
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
@@ -443,26 +456,57 @@ export default function VideoStemMixer({
 
             {/* Video Player */}
             <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--glass-border)" }}>
-                <video
-                    ref={videoRef}
-                    src={getVideoUrl()}
-                    muted
-                    playsInline
-                    style={{
-                        width: "100%",
-                        maxHeight: "400px",
-                        borderRadius: "12px",
-                        background: "#000",
-                        objectFit: "contain"
-                    }}
-                />
+                <div style={{ position: "relative" }}>
+                    <video
+                        ref={videoRef}
+                        src={getVideoUrl()}
+                        muted={videoMuted}
+                        playsInline
+                        style={{
+                            width: "100%",
+                            maxHeight: "400px",
+                            borderRadius: "12px",
+                            background: "#000",
+                            objectFit: "contain"
+                        }}
+                    />
+                    {/* Video Mute Toggle Button */}
+                    <button
+                        onClick={() => setVideoMuted(!videoMuted)}
+                        style={{
+                            position: "absolute",
+                            bottom: "12px",
+                            right: "12px",
+                            width: "40px",
+                            height: "40px",
+                            borderRadius: "50%",
+                            background: "rgba(0, 0, 0, 0.7)",
+                            border: "1px solid rgba(255, 255, 255, 0.2)",
+                            color: videoMuted ? "var(--text-muted)" : "#fff",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            transition: "all 0.2s ease"
+                        }}
+                        title={videoMuted ? "Unmute video" : "Mute video"}
+                    >
+                        {videoMuted ? (
+                            <VolumeX style={{ width: "18px", height: "18px" }} />
+                        ) : (
+                            <Volume2 style={{ width: "18px", height: "18px" }} />
+                        )}
+                    </button>
+                </div>
                 <p style={{
                     fontSize: "0.7rem",
                     color: "var(--text-muted)",
                     marginTop: "8px",
                     textAlign: "center"
                 }}>
-                    Video is muted. Audio plays from separated stems below.
+                    {videoMuted
+                        ? "Video is muted. Audio plays from separated stems below."
+                        : "Playing original video audio. Stem audio may overlap."}
                 </p>
             </div>
 
@@ -753,7 +797,10 @@ export default function VideoStemMixer({
             {/* Download All */}
             <div style={{
                 padding: "20px 24px",
-                borderTop: "1px solid var(--glass-border)"
+                borderTop: "1px solid var(--glass-border)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px"
             }}>
                 <button
                     onClick={() => TRACKS.forEach((track) => downloadTrack(track.id, track.label))}
@@ -777,6 +824,112 @@ export default function VideoStemMixer({
                     <Download style={{ width: "18px", height: "18px" }} />
                     Download All Stems
                 </button>
+
+                {/* Download Video with Audio */}
+                <div>
+                    <button
+                        onClick={() => setShowVideoDownload(!showVideoDownload)}
+                        style={{
+                            width: "100%",
+                            padding: "14px",
+                            borderRadius: showVideoDownload ? "10px 10px 0 0" : "10px",
+                            background: showVideoDownload
+                                ? "var(--bg-tertiary)"
+                                : "linear-gradient(135deg, #059669, #10b981)",
+                            color: "white",
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: "0.9rem",
+                            fontWeight: 600,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "8px",
+                            boxShadow: showVideoDownload
+                                ? "none"
+                                : "0 4px 12px rgba(16, 185, 129, 0.3)"
+                        }}
+                    >
+                        <Film style={{ width: "18px", height: "18px" }} />
+                        Download Video with Audio
+                        <span style={{
+                            marginLeft: "4px",
+                            transform: showVideoDownload ? "rotate(180deg)" : "rotate(0deg)",
+                            transition: "transform 0.2s ease"
+                        }}>▼</span>
+                    </button>
+
+                    {/* Inline Options */}
+                    {showVideoDownload && (
+                        <div style={{
+                            background: "var(--bg-tertiary)",
+                            border: "1px solid var(--glass-border)",
+                            borderTop: "none",
+                            borderRadius: "0 0 10px 10px",
+                            overflow: "hidden"
+                        }}>
+                            <button
+                                onClick={() => downloadVideoWithAudio("original")}
+                                style={{
+                                    width: "100%",
+                                    padding: "12px 16px",
+                                    background: "transparent",
+                                    color: "var(--text-primary)",
+                                    border: "none",
+                                    borderBottom: "1px solid var(--glass-border)",
+                                    cursor: "pointer",
+                                    fontSize: "0.85rem",
+                                    textAlign: "left",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "10px"
+                                }}
+                            >
+                                <Volume2 style={{ width: "16px", height: "16px", color: "var(--text-muted)" }} />
+                                Original Audio
+                            </button>
+                            <button
+                                onClick={() => downloadVideoWithAudio("ghost")}
+                                style={{
+                                    width: "100%",
+                                    padding: "12px 16px",
+                                    background: "transparent",
+                                    color: "var(--text-primary)",
+                                    border: "none",
+                                    borderBottom: "1px solid var(--glass-border)",
+                                    cursor: "pointer",
+                                    fontSize: "0.85rem",
+                                    textAlign: "left",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "10px"
+                                }}
+                            >
+                                <Ghost style={{ width: "16px", height: "16px", color: "#F472B6" }} />
+                                Isolated Sound Only
+                            </button>
+                            <button
+                                onClick={() => downloadVideoWithAudio("clean")}
+                                style={{
+                                    width: "100%",
+                                    padding: "12px 16px",
+                                    background: "transparent",
+                                    color: "var(--text-primary)",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    fontSize: "0.85rem",
+                                    textAlign: "left",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "10px"
+                                }}
+                            >
+                                <Leaf style={{ width: "16px", height: "16px", color: "#60A5FA" }} />
+                                Without Isolated Sound
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

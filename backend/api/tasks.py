@@ -134,6 +134,92 @@ async def download_result(task_id: str, file_type: str):
     )
 
 
+@router.get("/{task_id}/download-video-with-audio/{audio_type}")
+async def download_video_with_audio(task_id: str, audio_type: str):
+    """
+    Download video with merged audio track
+    
+    - **audio_type**: "original", "ghost", or "clean"
+    """
+    import subprocess
+    import tempfile
+    import os
+    
+    if audio_type not in ["original", "ghost", "clean"]:
+        raise HTTPException(status_code=400, detail="Invalid audio type. Use 'original', 'ghost', or 'clean'")
+    
+    result = AsyncResult(task_id, app=celery_app)
+    
+    if result.state != "SUCCESS":
+        raise HTTPException(status_code=404, detail="Task not completed")
+    
+    # Get video path
+    video_path = result.result.get("video_path")
+    if not video_path:
+        raise HTTPException(status_code=404, detail="No video file for this task")
+    
+    video_file = Path(video_path)
+    if not video_file.exists():
+        raise HTTPException(status_code=404, detail="Video file not found")
+    
+    # Get audio path
+    audio_path = Path(result.result.get(f"{audio_type}_path", ""))
+    if not audio_path.exists():
+        raise HTTPException(status_code=404, detail=f"Audio file '{audio_type}' not found")
+    
+    # Create output file in the same directory as video
+    output_dir = video_file.parent
+    extension = video_file.suffix.lower()
+    output_filename = f"{task_id}_{audio_type}_merged{extension}"
+    output_path = output_dir / output_filename
+    
+    # Use FFmpeg to merge video and audio
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_file),
+            "-i", str(audio_path),
+            "-c:v", "copy",  # Copy video stream without re-encoding
+            "-c:a", "aac",   # Encode audio to AAC
+            "-b:a", "192k",  # Audio bitrate
+            "-map", "0:v:0", # Use video from first input
+            "-map", "1:a:0", # Use audio from second input
+            "-shortest",     # Match shortest stream
+            str(output_path)
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"FFmpeg error: {e.stderr.decode()}")
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="FFmpeg not found. Please install FFmpeg.")
+    
+    if not output_path.exists():
+        raise HTTPException(status_code=500, detail="Failed to create merged video")
+    
+    # Determine media type
+    media_types = {
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".mov": "video/quicktime",
+        ".avi": "video/x-msvideo",
+        ".mkv": "video/x-matroska"
+    }
+    media_type = media_types.get(extension, "video/mp4")
+    
+    # Map audio type to display name
+    audio_labels = {
+        "original": "original",
+        "ghost": "isolated",
+        "clean": "without_isolated"
+    }
+    
+    return FileResponse(
+        path=output_path,
+        filename=f"{task_id}_{audio_labels[audio_type]}_video{extension}",
+        media_type=media_type
+    )
+
+
 @router.delete("/{task_id}")
 async def cancel_task(task_id: str):
     """Cancel a pending or running task"""
