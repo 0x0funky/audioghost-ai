@@ -55,28 +55,63 @@ https://github.com/user-attachments/assets/6b8c08a8-c84f-4fc3-83ad-5703f474fc1b
 
 ## Requirements
 
+### Windows
 - **Python 3.11+**
 - **CUDA-compatible GPU** (4GB+ VRAM for lite mode, 12GB+ for full mode)
 - **CUDA 12.6** (recommended)
 - **Node.js 18+** (for frontend)
 
-> 💡 FFmpeg and Redis are automatically installed by the installer.
+### macOS
+- **Python 3.11+**
+- **Apple Silicon (M1/M2/M3/M4)** or Intel Mac
+- **Node.js 18+** (for frontend)
+- **Homebrew** (for Redis installation)
+
+> 💡 **Note for Mac users**: The application uses CPU processing to avoid MPS (Metal Performance Shaders) compatibility issues. This is slower but more stable.
+
+### Linux
+- **Python 3.11+**
+- **CUDA-compatible GPU** (4GB+ VRAM for lite mode, 12GB+ for full mode) or CPU
+- **CUDA 12.6** (recommended for GPU)
+- **Node.js 18+** (for frontend)
+
+> 💡 FFmpeg and Redis are automatically installed by the installer on all platforms.
 
 ## 🚀 One-Click Installation (Recommended)
 
-### First Time Setup
+### Windows
+
+**First Time Setup:**
 ```bash
 # Run installer (creates Conda env, downloads Redis, installs all dependencies)
-install.bat
+windows\install.bat
 ```
 
-### Daily Usage
+**Daily Usage:**
 ```bash
 # Start all services with one click
-start.bat
+windows\start.bat
 
 # Stop all services
-stop.bat
+windows\stop.bat
+```
+
+### macOS / Linux
+
+**First Time Setup:**
+```bash
+# Run installer (creates Conda env, installs Redis, installs all dependencies)
+chmod +x unix/*.sh
+./unix/install.sh
+```
+
+**Daily Usage:**
+```bash
+# Start all services with one click
+./unix/start.sh
+
+# Stop all services
+./unix/stop.sh
 ```
 
 ---
@@ -233,12 +268,20 @@ audioghost-ai/
 │   │   └── separate.py   # Separation endpoints
 │   └── workers/
 │       ├── celery_app.py # Celery config
-│       └── tasks.py      # SAM Audio Lite worker
+│       └── tasks.py      # SAM Audio Lite worker (with Mac CPU fix)
 ├── frontend/
 │   ├── src/
 │   │   ├── app/          # Next.js app
 │   │   └── components/   # React components
 │   └── package.json
+├── windows/              # Windows-specific scripts
+│   ├── install.bat       # One-click installer for Windows
+│   ├── start.bat         # Start all services (Windows)
+│   └── stop.bat          # Stop all services (Windows)
+├── unix/                 # macOS/Linux scripts
+│   ├── install.sh        # One-click installer for Unix
+│   ├── start.sh          # Start all services (Unix)
+│   └── stop.sh           # Stop all services (Unix)
 ├── sam_audio_lite.py     # Standalone lite version
 ├── QUICKSTART.md         # Quick setup guide
 └── README.md

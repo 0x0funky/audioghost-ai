@@ -194,7 +194,17 @@ def separate_audio_task(
     from huggingface_hub import login
     
     task_id = self.request.id
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    # Force CPU on Mac to avoid MPS memory issues
+    # MPS (Metal Performance Shaders) can cause SIGABRT crashes with large models
+    # Windows/Linux: Use CUDA if available, otherwise CPU
+    if sys.platform == "darwin":  # macOS
+        device = "cpu"
+        print(f"[DEBUG] Detected macOS - forcing CPU to avoid MPS issues")
+    else:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"[DEBUG] Using device: {device}")
+    
     video_path = None  # Will be set if input is video
     
     # Debug: Show received parameter
