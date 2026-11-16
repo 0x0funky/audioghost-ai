@@ -506,6 +506,8 @@ def mix_label(data: dict, gains: Dict[str, float]) -> str:
     if unity and rest_on and len(done) - len(audible) == 1:
         muted = next(t["prompt"] for t in done if t["id"] not in audible)
         return f"no {muted}"
+    if unity and rest_on and not audible:
+        return "everything else"
     return "mix"
 
 
@@ -544,9 +546,9 @@ def export_mix(sid: str, gains: Dict[str, float], fmt: str) -> tuple:
         raise ValueError("Nothing to export: every track is muted.")
     out = _exports_dir(sid)
     stamp = uuid.uuid4().hex[:8]
-    wav = out / f"mix-{stamp}.wav"
+    wav = out / f"mix-{stamp}.f32.wav"  # not the export name: WAV exports are 24-bit
     _combine(wav, sources, data["source"]["frames"], data["source"]["channels"])
-    final = wav if fmt == "wav-float" else audio_io.export_audio(wav, out / f"mix-{stamp}.{fmt}", fmt)
+    final = audio_io.export_audio(wav, out / f"mix-{stamp}.{fmt}", fmt)
     return final, f"{_base_name(data)} [{_tag(mix_label(data, gains))}].{fmt}"
 
 
@@ -598,7 +600,7 @@ def export_video(sid: str, gains: Dict[str, float]) -> tuple:
     folder = session_dir(sid)
     out = _exports_dir(sid)
     stamp = uuid.uuid4().hex[:8]
-    wav = out / f"mix-{stamp}.wav"
+    wav = out / f"mix-{stamp}.f32.wav"  # not the export name: WAV exports are 24-bit
     _combine(wav, sources, data["source"]["frames"], data["source"]["channels"])
     ext = Path(data["source"]["file"]).suffix
     video = audio_io.merge_video_audio(folder / data["source"]["file"], wav, out / f"video-{stamp}{ext}")

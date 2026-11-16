@@ -95,7 +95,8 @@ def test_all_tracks_at_unity_rebuild_the_original(store):
     gains = {ids[0]: 1.0, ids[1]: 1.0, "rest": 1.0}
     path, name = sessions.export_mix(sid, gains, "wav")
     original = read(sessions.session_dir(sid) / "original.wav")
-    np.testing.assert_allclose(read(path), original, atol=2e-6)  # 24-bit export
+    assert sf.info(str(path)).subtype == "PCM_24"  # not the float working file
+    np.testing.assert_allclose(read(path), original, atol=2e-6)
     assert name == "My Song [mix].wav"
 
 
