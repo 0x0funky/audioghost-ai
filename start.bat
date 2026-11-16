@@ -5,7 +5,7 @@ title AudioGhost AI - Launcher
 echo.
 echo ╔══════════════════════════════════════════════════════════════╗
 echo ║              AudioGhost AI - Launcher                        ║
-echo ║                   v1.0 MVP                                   ║
+echo ║                        v1.1                                  ║
 echo ╚══════════════════════════════════════════════════════════════╝
 echo.
 
@@ -39,7 +39,7 @@ exit /b 1
 :redis_ready
 
 echo [2/4] Starting Backend API...
-start "AudioGhost Backend" cmd /k "cd /d %SCRIPT_DIR% && conda activate audioghost && cd backend && uvicorn main:app --reload --port 8000"
+start "AudioGhost Backend" cmd /k "cd /d %SCRIPT_DIR% && conda activate audioghost && cd backend && uvicorn main:app --host 127.0.0.1 --port 8000"
 
 echo [3/4] Starting Celery Worker...
 timeout /t 2 /nobreak >nul
