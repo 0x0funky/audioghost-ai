@@ -79,6 +79,15 @@ export default function Home() {
     checkSystem();
   }, [checkSystem]);
 
+  // Keep re-checking while something looks wrong (e.g. the worker is still
+  // starting up), so the warning disappears on its own once it's fixed.
+  const systemProblem = !!system && !(system.reachable && system.redis && system.worker);
+  useEffect(() => {
+    if (!systemProblem) return;
+    const timer = setInterval(checkSystem, 5000);
+    return () => clearInterval(timer);
+  }, [systemProblem, checkSystem]);
+
   useEffect(() => {
     document.body.classList.toggle("light-mode", !isDarkMode);
   }, [isDarkMode]);
@@ -118,6 +127,10 @@ export default function Home() {
         if (data.status === "cancelled") {
           resetTask();
           return;
+        }
+        if (data.status === "processing" || data.status === "completed") {
+          // A job is making progress, so the backend, Redis and the worker are fine.
+          setSystem(prev => (prev && !prev.worker ? { reachable: true, redis: true, worker: true } : prev));
         }
         setTask({
           taskId,
