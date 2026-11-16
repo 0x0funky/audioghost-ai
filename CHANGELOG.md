@@ -13,6 +13,10 @@ A new workspace: several sounds per run, each on its own track, a mixer, and exp
 - **Temporal Lock, both ways**: drag on the timeline to mark where a sound is audible or where it is not, per sound (SAM-Audio's positive and negative anchors).
 - **Start screen** with upload progress, recent sessions and a setup card (GPU, Hugging Face access, downloaded models); system status moved into a chip in the top bar.
 - **Sessions API** (`/api/sessions/...`); the v1.1 endpoints keep working.
+- Sounds separated in mono from a stereo file keep their place in the stereo image (each track's left/right
+  balance is measured against the original), so muting a panned instrument removes it from both channels.
+- Tracks that were running when the worker stopped (window closed, crash, out of memory) are marked
+  "Interrupted" when it starts again, with *Try again*, instead of spinning forever.
 
 ### Changed
 - The interface was rebuilt around one workspace (multi-track timeline, separate panel, mix bar) with a single design system for dark and light themes; CSS modules replace ~250 inline style blocks, and one track lane replaces the two separate mixers.
@@ -21,6 +25,10 @@ A new workspace: several sounds per run, each on its own track, a mixer, and exp
 
 ### Fixed
 - WAV exports of a mix were written as 32-bit float instead of 24-bit.
+- Old sessions are now cleaned up every 10 minutes, not only when the API starts.
+- The worker's heartbeat kept going during a first model download (no false "worker not running").
+- A new "everything else" revision could play silently until the mix changed.
+- A sound typed but not added was lost when Separate failed.
 
 ## v1.1.1 - 2026-11
 
