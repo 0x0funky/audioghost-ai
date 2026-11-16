@@ -1,6 +1,6 @@
 "use client";
 
-import { Sun, Moon, Ghost, User, LogOut } from "lucide-react";
+import { Sun, Moon, Ghost, User } from "lucide-react";
 
 interface HeaderProps {
     isAuthenticated: boolean;
@@ -63,7 +63,7 @@ export default function Header({
                             Audio<span className="gradient-text">Ghost</span>
                         </h1>
                         <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                            v1.0 MVP
+                            v1.1
                         </p>
                     </div>
                 </div>
@@ -72,6 +72,8 @@ export default function Header({
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                     {/* Theme Toggle */}
                     <button
+                        type="button"
+                        aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
                         onClick={onThemeToggle}
                         style={{
                             padding: "8px",

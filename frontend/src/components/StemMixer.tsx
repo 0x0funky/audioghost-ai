@@ -11,20 +11,31 @@ import {
     Ghost,
     Leaf,
     SkipBack,
-    Music,
     type LucideIcon
 } from "lucide-react";
 import WaveSurfer from "wavesurfer.js";
+import type { TaskResult } from "@/lib/types";
+import FormatPicker from "@/components/FormatPicker";
+import {
+    QUALITY_LABELS,
+    downloadAllUrl,
+    loadString,
+    saveString,
+    stemDownloadUrl,
+    stemUrl,
+    triggerDownload,
+    type DownloadFormat,
+} from "@/lib/api";
 
 interface StemMixerProps {
     taskId: string;
-    description: string;
+    result: TaskResult;
     onNewSeparation: () => void;
     onUploadNew?: () => void;
-    audioDuration?: number;
-    processingTime?: number;
-    modelSize?: string;
 }
+
+// Playback follows this track; the others are kept in sync with it.
+const MASTER_TRACK = "ghost";
 
 interface Track {
     id: "ghost" | "clean";
@@ -53,13 +64,27 @@ const TRACKS: Track[] = [
 
 export default function StemMixer({
     taskId,
-    description,
+    result,
     onNewSeparation,
     onUploadNew,
-    audioDuration,
-    processingTime,
-    modelSize
 }: StemMixerProps) {
+    const {
+        description,
+        audio_duration: audioDuration,
+        processing_time: processingTime,
+        model_size: modelSize,
+        quality,
+        stereo,
+        model_variant: modelVariant,
+    } = result;
+    // Mixers only mount on the client after a task finishes, so localStorage is safe here.
+    const [format, setFormat] = useState<DownloadFormat>(
+        () => loadString("downloadFormat", "wav") as DownloadFormat
+    );
+    const changeFormat = (value: DownloadFormat) => {
+        setFormat(value);
+        saveString("downloadFormat", value);
+    };
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -76,9 +101,7 @@ export default function StemMixer({
     const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const isSeeking = useRef(false);
 
-    const getAudioUrl = (trackId: string) => {
-        return `http://localhost:8000/api/tasks/${taskId}/download/${trackId}`;
-    };
+    const getAudioUrl = (trackId: Track["id"]) => stemUrl(taskId, trackId);
 
     useEffect(() => {
         const initWaveSurfers = async () => {
@@ -87,7 +110,7 @@ export default function StemMixer({
                 if (!container) continue;
 
                 if (wavesurferRefs.current[track.id]) {
-                    wavesurferRefs.current[track.id]?.destroy();
+                    try { wavesurferRefs.current[track.id]?.destroy(); } catch { /* aborted load */ }
                 }
 
                 const ws = WaveSurfer.create({
@@ -106,7 +129,10 @@ export default function StemMixer({
                     hideScrollbar: true,
                 });
 
-                ws.load(getAudioUrl(track.id));
+                // destroy() during loading (React StrictMode re-runs effects) rejects with AbortError
+                ws.load(getAudioUrl(track.id)).catch((err: unknown) => {
+                    if ((err as Error)?.name !== "AbortError") console.error(err);
+                });
 
                 ws.on("ready", () => {
                     setIsReady(prev => ({ ...prev, [track.id]: true }));
@@ -188,7 +214,7 @@ export default function StemMixer({
         const syncTracks = (timestamp: number) => {
             if (isPlaying && timestamp - lastSync > syncInterval) {
                 lastSync = timestamp;
-                const originalWs = wavesurferRefs.current["original"];
+                const originalWs = wavesurferRefs.current[MASTER_TRACK];
                 if (originalWs) {
                     const masterTime = originalWs.getCurrentTime();
                     const masterDuration = originalWs.getDuration();
@@ -206,7 +232,7 @@ export default function StemMixer({
 
                     // Sync other tracks to master
                     Object.entries(wavesurferRefs.current).forEach(([id, ws]) => {
-                        if (ws && id !== "original") {
+                        if (ws && id !== MASTER_TRACK) {
                             const trackTime = ws.getCurrentTime();
                             // Only sync if drift is more than 0.05 seconds
                             if (Math.abs(trackTime - masterTime) > 0.05) {
@@ -243,11 +269,11 @@ export default function StemMixer({
             setIsPlaying(false);
         } else {
             // First sync all tracks to the same position
-            const originalWs = wavesurferRefs.current["original"];
+            const originalWs = wavesurferRefs.current[MASTER_TRACK];
             if (originalWs) {
                 const progress = originalWs.getCurrentTime() / originalWs.getDuration();
                 Object.entries(wavesurferRefs.current).forEach(([id, ws]) => {
-                    if (ws && id !== "original") {
+                    if (ws && id !== MASTER_TRACK) {
                         ws.seekTo(progress);
                     }
                 });
@@ -292,13 +318,9 @@ export default function StemMixer({
         isSeeking.current = false;
     }, [duration]);
 
-    const downloadTrack = (trackId: string, label: string) => {
-        const link = document.createElement("a");
-        link.href = getAudioUrl(trackId);
-        link.download = `${taskId}_${label.toLowerCase().replace(/\s+/g, "_")}.wav`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    // The server names the files, e.g. "song [vocals].wav" / "song [no vocals].wav".
+    const downloadTrack = (trackId: Track["id"]) => {
+        triggerDownload(stemDownloadUrl(taskId, trackId, format));
     };
 
     const formatTime = (seconds: number) => {
@@ -341,7 +363,7 @@ export default function StemMixer({
                         fontSize: "0.8rem",
                         color: "var(--text-muted)"
                     }}>
-                        "{description}"
+                        &ldquo;{description}&rdquo;
                     </p>
                 </div>
                 <div style={{ display: "flex", gap: "8px" }}>
@@ -439,7 +461,17 @@ export default function StemMixer({
                                 color: "var(--ghost-primary)",
                                 textTransform: "capitalize"
                             }}>
-                                {modelSize}
+                                {modelSize}{modelVariant === "tv" ? " -tv" : ""}
+                            </span>
+                        </div>
+                    )}
+                    {quality && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                Quality:
+                            </span>
+                            <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>
+                                {QUALITY_LABELS[quality] ?? quality}{stereo ? " · Stereo" : ""}
                             </span>
                         </div>
                     )}
@@ -473,6 +505,8 @@ export default function StemMixer({
                 }}
             >
                 <button
+                    type="button"
+                    aria-label="Back to start"
                     onClick={resetToStart}
                     disabled={!allReady}
                     style={{
@@ -493,6 +527,8 @@ export default function StemMixer({
                 </button>
 
                 <button
+                    type="button"
+                    aria-label={!allReady ? "Loading stems" : isPlaying ? "Pause all stems" : "Play all stems"}
                     onClick={togglePlayAll}
                     disabled={!allReady}
                     style={{
@@ -529,6 +565,20 @@ export default function StemMixer({
                     </span>
 
                     <div
+                        role="slider"
+                        tabIndex={0}
+                        aria-label="Playback position"
+                        aria-valuemin={0}
+                        aria-valuemax={Math.round(duration)}
+                        aria-valuenow={Math.round(currentTime)}
+                        aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
+                        onKeyDown={(e) => {
+                            if (!duration || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+                            e.preventDefault();
+                            const next = Math.max(0, Math.min(duration, currentTime + (e.key === "ArrowRight" ? 5 : -5)));
+                            Object.values(wavesurferRefs.current).forEach(ws => ws?.seekTo(next / duration));
+                            setCurrentTime(next);
+                        }}
                         style={{
                             flex: 1,
                             height: "4px",
@@ -588,6 +638,9 @@ export default function StemMixer({
                         >
                             {/* Mute Button */}
                             <button
+                                type="button"
+                                aria-pressed={isMuted}
+                                aria-label={`Mute ${track.label}`}
                                 onClick={() => toggleMute(track.id)}
                                 style={{
                                     width: "32px",
@@ -664,7 +717,10 @@ export default function StemMixer({
 
                             {/* Download */}
                             <button
-                                onClick={() => downloadTrack(track.id, track.label)}
+                                type="button"
+                                aria-label={`Download ${track.label} as ${format.toUpperCase()}`}
+                                title={`Download ${track.label} (${format.toUpperCase()})`}
+                                onClick={() => downloadTrack(track.id)}
                                 style={{
                                     width: "32px",
                                     height: "32px",
@@ -689,10 +745,15 @@ export default function StemMixer({
             {/* Download All */}
             <div style={{
                 padding: "20px 24px",
-                borderTop: "1px solid var(--glass-border)"
+                borderTop: "1px solid var(--glass-border)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px"
             }}>
+                <FormatPicker value={format} onChange={changeFormat} />
                 <button
-                    onClick={() => TRACKS.forEach((track) => downloadTrack(track.id, track.label))}
+                    type="button"
+                    onClick={() => triggerDownload(downloadAllUrl(taskId, format))}
                     style={{
                         width: "100%",
                         padding: "14px",
@@ -710,8 +771,8 @@ export default function StemMixer({
                         boxShadow: "0 4px 12px rgba(99, 102, 241, 0.3)"
                     }}
                 >
-                    <Download style={{ width: "18px", height: "18px" }} />
-                    Download All Stems
+                    <Download aria-hidden style={{ width: "18px", height: "18px" }} />
+                    Download All Stems (.zip)
                 </button>
             </div>
         </div>

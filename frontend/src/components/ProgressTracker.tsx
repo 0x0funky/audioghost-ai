@@ -1,23 +1,33 @@
 "use client";
 
-import { Ghost, Loader2, CheckCircle2 } from "lucide-react";
+import { Ghost, Loader2, CheckCircle2, XCircle } from "lucide-react";
 
 interface ProgressTrackerProps {
     status: "pending" | "processing";
     progress: number;
     message: string;
+    queuePosition?: number | null;
+    onCancel?: () => void;
 }
 
-export default function ProgressTracker({ status, progress, message }: ProgressTrackerProps) {
-    const steps = [
-        { step: "Loading model", threshold: 10 },
-        { step: "Processing audio", threshold: 30 },
-        { step: "Running separation", threshold: 50 },
-        { step: "Saving results", threshold: 80 },
-    ];
+// Progress ranges reported by the worker (backend/workers/tasks.py).
+const STEPS = [
+    { step: "Preparing", start: 0, end: 8 },
+    { step: "Loading model (first run downloads it)", start: 8, end: 30 },
+    { step: "Separating", start: 30, end: 92 },
+    { step: "Saving results", start: 92, end: 100 },
+];
+
+export default function ProgressTracker({ status, progress, message, queuePosition, onCancel }: ProgressTrackerProps) {
+    const title = status === "pending"
+        ? queuePosition
+            ? `Waiting in Queue (${queuePosition} ahead)`
+            : "Waiting in Queue..."
+        : "Processing Audio...";
 
     return (
-        <div
+        <section
+            aria-label="Separation progress"
             style={{
                 background: "var(--bg-secondary)",
                 borderRadius: "20px",
@@ -28,6 +38,7 @@ export default function ProgressTracker({ status, progress, message }: ProgressT
             {/* Icon */}
             <div style={{ textAlign: "center", marginBottom: "32px" }}>
                 <div
+                    aria-hidden
                     style={{
                         width: "80px",
                         height: "80px",
@@ -54,7 +65,6 @@ export default function ProgressTracker({ status, progress, message }: ProgressT
                 </div>
             </div>
 
-            {/* Title */}
             <h3
                 style={{
                     fontSize: "1.5rem",
@@ -64,16 +74,18 @@ export default function ProgressTracker({ status, progress, message }: ProgressT
                     marginBottom: "8px"
                 }}
             >
-                {status === "pending" ? "Waiting in Queue..." : "Processing Audio..."}
+                {title}
             </h3>
 
-            {/* Message */}
+            {/* Message (announced to screen readers) */}
             <p
+                aria-live="polite"
                 style={{
                     fontSize: "0.9rem",
                     color: "var(--text-muted)",
                     textAlign: "center",
-                    marginBottom: "32px"
+                    marginBottom: "32px",
+                    minHeight: "1.4em"
                 }}
             >
                 {message}
@@ -81,27 +93,19 @@ export default function ProgressTracker({ status, progress, message }: ProgressT
 
             {/* Progress Bar */}
             <div style={{ marginBottom: "32px" }}>
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: "10px"
-                    }}
-                >
-                    <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                        Progress
-                    </span>
-                    <span
-                        style={{
-                            fontSize: "0.85rem",
-                            fontWeight: 600,
-                            color: "var(--ghost-primary)"
-                        }}
-                    >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+                    <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Progress</span>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--ghost-primary)" }}>
                         {progress}%
                     </span>
                 </div>
                 <div
+                    role="progressbar"
+                    aria-label="Separation progress"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={progress}
+                    aria-valuetext={`${progress}% - ${message}`}
                     style={{
                         height: "8px",
                         borderRadius: "4px",
@@ -122,32 +126,33 @@ export default function ProgressTracker({ status, progress, message }: ProgressT
             </div>
 
             {/* Steps */}
-            <div
+            <ol
                 style={{
                     background: "var(--bg-tertiary)",
                     borderRadius: "12px",
-                    padding: "20px"
+                    padding: "20px",
+                    listStyle: "none",
+                    margin: 0
                 }}
             >
-                {steps.map(({ step, threshold }, index) => {
-                    const isComplete = progress >= threshold;
-                    const isActive = !isComplete && progress >= threshold - 20;
+                {STEPS.map(({ step, start, end }, index) => {
+                    const isComplete = status === "processing" && progress >= end;
+                    const isActive = status === "processing" && !isComplete && progress >= start;
 
                     return (
-                        <div
+                        <li
                             key={step}
+                            aria-current={isActive ? "step" : undefined}
                             style={{
                                 display: "flex",
                                 alignItems: "center",
                                 gap: "14px",
                                 padding: "12px 0",
-                                borderBottom: index < steps.length - 1
-                                    ? "1px solid var(--border-color)"
-                                    : "none"
+                                borderBottom: index < STEPS.length - 1 ? "1px solid var(--border-color)" : "none"
                             }}
                         >
-                            {/* Status Icon */}
                             <div
+                                aria-hidden
                                 style={{
                                     width: "24px",
                                     height: "24px",
@@ -161,32 +166,15 @@ export default function ProgressTracker({ status, progress, message }: ProgressT
                                         : isActive
                                             ? "var(--ghost-primary)"
                                             : "transparent",
-                                    border: isComplete || isActive
-                                        ? "none"
-                                        : "2px solid var(--text-muted)"
+                                    border: isComplete || isActive ? "none" : "2px solid var(--text-muted)"
                                 }}
                             >
                                 {isComplete ? (
-                                    <CheckCircle2
-                                        style={{
-                                            width: "14px",
-                                            height: "14px",
-                                            color: "white"
-                                        }}
-                                    />
+                                    <CheckCircle2 style={{ width: "14px", height: "14px", color: "white" }} />
                                 ) : isActive ? (
-                                    <Loader2
-                                        style={{
-                                            width: "12px",
-                                            height: "12px",
-                                            color: "white",
-                                            animation: "spin 1s linear infinite"
-                                        }}
-                                    />
+                                    <Loader2 style={{ width: "12px", height: "12px", color: "white", animation: "spin 1s linear infinite" }} />
                                 ) : null}
                             </div>
-
-                            {/* Step Label */}
                             <span
                                 style={{
                                     fontSize: "0.9rem",
@@ -199,11 +187,37 @@ export default function ProgressTracker({ status, progress, message }: ProgressT
                                 }}
                             >
                                 {step}
+                                <span className="sr-only">{isComplete ? " (done)" : isActive ? " (in progress)" : ""}</span>
                             </span>
-                        </div>
+                        </li>
                     );
                 })}
-            </div>
-        </div>
+            </ol>
+
+            {onCancel && (
+                <div style={{ textAlign: "center", marginTop: "24px" }}>
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            padding: "10px 18px",
+                            borderRadius: "10px",
+                            border: "1px solid var(--border-color)",
+                            background: "var(--bg-tertiary)",
+                            color: "var(--text-secondary)",
+                            cursor: "pointer",
+                            fontSize: "0.85rem",
+                            fontWeight: 500
+                        }}
+                    >
+                        <XCircle aria-hidden style={{ width: "16px", height: "16px" }} />
+                        Cancel
+                    </button>
+                </div>
+            )}
+        </section>
     );
 }

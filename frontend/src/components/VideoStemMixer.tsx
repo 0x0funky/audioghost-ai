@@ -15,15 +15,25 @@ import {
     type LucideIcon
 } from "lucide-react";
 import WaveSurfer from "wavesurfer.js";
+import FormatPicker from "@/components/FormatPicker";
+import type { TaskResult } from "@/lib/types";
+import {
+    QUALITY_LABELS,
+    downloadAllUrl,
+    loadString,
+    saveString,
+    stemDownloadUrl,
+    stemUrl,
+    triggerDownload,
+    videoWithAudioUrl,
+    type DownloadFormat,
+} from "@/lib/api";
 
 interface VideoStemMixerProps {
     taskId: string;
-    description: string;
+    result: TaskResult;
     onNewSeparation: () => void;
     onUploadNew?: () => void;
-    audioDuration?: number;
-    processingTime?: number;
-    modelSize?: string;
 }
 
 interface Track {
@@ -53,13 +63,27 @@ const TRACKS: Track[] = [
 
 export default function VideoStemMixer({
     taskId,
-    description,
+    result,
     onNewSeparation,
     onUploadNew,
-    audioDuration,
-    processingTime,
-    modelSize
 }: VideoStemMixerProps) {
+    const {
+        description,
+        audio_duration: audioDuration,
+        processing_time: processingTime,
+        model_size: modelSize,
+        quality,
+        stereo,
+        model_variant: modelVariant,
+    } = result;
+    // Mixers only mount on the client after a task finishes, so localStorage is safe here.
+    const [format, setFormat] = useState<DownloadFormat>(
+        () => loadString("downloadFormat", "wav") as DownloadFormat
+    );
+    const changeFormat = (value: DownloadFormat) => {
+        setFormat(value);
+        saveString("downloadFormat", value);
+    };
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -80,13 +104,9 @@ export default function VideoStemMixer({
     const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const isSeeking = useRef(false);
 
-    const getAudioUrl = (trackId: string) => {
-        return `http://localhost:8000/api/tasks/${taskId}/download/${trackId}`;
-    };
+    const getAudioUrl = (trackId: Track["id"]) => stemUrl(taskId, trackId);
 
-    const getVideoUrl = () => {
-        return `http://localhost:8000/api/tasks/${taskId}/download/video`;
-    };
+    const getVideoUrl = () => stemUrl(taskId, "video");
 
     // Initialize video and wavesurfers
     useEffect(() => {
@@ -96,7 +116,7 @@ export default function VideoStemMixer({
                 if (!container) continue;
 
                 if (wavesurferRefs.current[track.id]) {
-                    wavesurferRefs.current[track.id]?.destroy();
+                    try { wavesurferRefs.current[track.id]?.destroy(); } catch { /* aborted load */ }
                 }
 
                 const ws = WaveSurfer.create({
@@ -114,7 +134,10 @@ export default function VideoStemMixer({
                     hideScrollbar: true,
                 });
 
-                ws.load(getAudioUrl(track.id));
+                // destroy() during loading (React StrictMode re-runs effects) rejects with AbortError
+                ws.load(getAudioUrl(track.id)).catch((err: unknown) => {
+                    if ((err as Error)?.name !== "AbortError") console.error(err);
+                });
 
                 ws.on("ready", () => {
                     setIsReady(prev => ({ ...prev, [track.id]: true }));
@@ -359,23 +382,13 @@ export default function VideoStemMixer({
         // Note: isSeeking is reset by video's 'seeked' event
     }, [duration]);
 
-    const downloadTrack = (trackId: string, label: string) => {
-        const link = document.createElement("a");
-        link.href = getAudioUrl(trackId);
-        link.download = `${taskId}_${label.toLowerCase().replace(/\s+/g, "_")}.wav`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    // The server names the files, e.g. "clip [crowd noise].wav" / "clip [no crowd noise].mp4".
+    const downloadTrack = (trackId: Track["id"]) => {
+        triggerDownload(stemDownloadUrl(taskId, trackId, format));
     };
 
     const downloadVideoWithAudio = (audioType: "original" | "ghost" | "clean") => {
-        const link = document.createElement("a");
-        link.href = `http://localhost:8000/api/tasks/${taskId}/download-video-with-audio/${audioType}`;
-        const labels = { original: "original", ghost: "isolated", clean: "without_isolated" };
-        link.download = `${taskId}_${labels[audioType]}_video.mp4`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        triggerDownload(videoWithAudioUrl(taskId, audioType));
         setShowVideoDownload(false);
     };
 
@@ -423,7 +436,7 @@ export default function VideoStemMixer({
                         fontSize: "0.8rem",
                         color: "var(--text-muted)"
                     }}>
-                        "{description}"
+                        &ldquo;{description}&rdquo;
                     </p>
                 </div>
                 <div style={{ display: "flex", gap: "8px" }}>
@@ -487,6 +500,9 @@ export default function VideoStemMixer({
                     />
                     {/* Video Mute Toggle Button */}
                     <button
+                        type="button"
+                        aria-pressed={!videoMuted}
+                        aria-label={videoMuted ? "Unmute the video's own audio" : "Mute the video's own audio"}
                         onClick={() => setVideoMuted(!videoMuted)}
                         style={{
                             position: "absolute",
@@ -577,7 +593,7 @@ export default function VideoStemMixer({
                                 color: "var(--ghost-primary)",
                                 textTransform: "capitalize"
                             }}>
-                                {modelSize}
+                                {modelSize}{modelVariant === "tv" ? " -tv" : ""}{quality ? ` · ${QUALITY_LABELS[quality] ?? quality}` : ""}{stereo ? " · Stereo" : ""}
                             </span>
                         </div>
                     )}
@@ -596,6 +612,8 @@ export default function VideoStemMixer({
                 }}
             >
                 <button
+                    type="button"
+                    aria-label="Back to start"
                     onClick={resetToStart}
                     disabled={!allReady}
                     style={{
@@ -616,6 +634,8 @@ export default function VideoStemMixer({
                 </button>
 
                 <button
+                    type="button"
+                    aria-label={!allReady ? "Loading" : isPlaying ? "Pause" : "Play"}
                     onClick={togglePlayAll}
                     disabled={!allReady}
                     style={{
@@ -711,6 +731,9 @@ export default function VideoStemMixer({
                         >
                             {/* Mute Button */}
                             <button
+                                type="button"
+                                aria-pressed={muted[track.id]}
+                                aria-label={`Mute ${track.label}`}
                                 onClick={() => toggleMute(track.id)}
                                 style={{
                                     width: "32px",
@@ -787,7 +810,10 @@ export default function VideoStemMixer({
 
                             {/* Download */}
                             <button
-                                onClick={() => downloadTrack(track.id, track.label)}
+                                type="button"
+                                aria-label={`Download ${track.label} as ${format.toUpperCase()}`}
+                                title={`Download ${track.label} (${format.toUpperCase()})`}
+                                onClick={() => downloadTrack(track.id)}
                                 style={{
                                     width: "32px",
                                     height: "32px",
@@ -817,8 +843,10 @@ export default function VideoStemMixer({
                 flexDirection: "column",
                 gap: "12px"
             }}>
+                <FormatPicker value={format} onChange={changeFormat} />
                 <button
-                    onClick={() => TRACKS.forEach((track) => downloadTrack(track.id, track.label))}
+                    type="button"
+                    onClick={() => triggerDownload(downloadAllUrl(taskId, format))}
                     style={{
                         width: "100%",
                         padding: "14px",
@@ -837,12 +865,14 @@ export default function VideoStemMixer({
                     }}
                 >
                     <Download style={{ width: "18px", height: "18px" }} />
-                    Download All Stems
+                    Download All Stems (.zip)
                 </button>
 
                 {/* Download Video with Audio */}
                 <div>
                     <button
+                        type="button"
+                        aria-expanded={showVideoDownload}
                         onClick={() => setShowVideoDownload(!showVideoDownload)}
                         style={{
                             width: "100%",

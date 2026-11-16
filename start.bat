@@ -5,13 +5,17 @@ title AudioGhost AI - Launcher
 echo.
 echo ╔══════════════════════════════════════════════════════════════╗
 echo ║              AudioGhost AI - Launcher                        ║
-echo ║                   v1.0 MVP                                   ║
+echo ║                        v1.1                                  ║
 echo ╚══════════════════════════════════════════════════════════════╝
 echo.
 
 :: Get the directory where this script is located
 set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
+
+:: FFmpeg DLLs downloaded by install.bat (used by TorchCodec and for video export).
+:: The service windows below inherit this PATH.
+if exist "%SCRIPT_DIR%ffmpeg\bin" set "PATH=%SCRIPT_DIR%ffmpeg\bin;%PATH%"
 
 :: Check if Docker Redis is already running on port 6379
 echo [1/4] Checking Redis...
@@ -39,7 +43,7 @@ exit /b 1
 :redis_ready
 
 echo [2/4] Starting Backend API...
-start "AudioGhost Backend" cmd /k "cd /d %SCRIPT_DIR% && conda activate audioghost && cd backend && uvicorn main:app --reload --port 8000"
+start "AudioGhost Backend" cmd /k "cd /d %SCRIPT_DIR% && conda activate audioghost && cd backend && uvicorn main:app --host 127.0.0.1 --port 8000"
 
 echo [3/4] Starting Celery Worker...
 timeout /t 2 /nobreak >nul

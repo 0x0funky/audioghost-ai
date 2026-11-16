@@ -90,3 +90,13 @@ CODE_OF_CONDUCT.md
 CONTRIBUTING.md
 .pre-commit-config.yaml
 pyproject.toml
+
+# Large local files (model weights, debug artifacts)
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+debug_*.jpg
+.audioghost/
+# FFmpeg downloaded by install.bat
+ffmpeg/

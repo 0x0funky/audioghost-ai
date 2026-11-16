@@ -1,15 +1,38 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { Upload, Music, Video } from "lucide-react";
+import { Upload, Music } from "lucide-react";
 
 interface AudioUploaderProps {
     onFileUpload: (file: File) => void;
 }
 
+const AUDIO_EXT = /\.(mp3|wav|flac|ogg|opus|m4a|aac|aiff?|wma)$/i;
+const VIDEO_EXT = /\.(mp4|m4v|webm|mov|avi|mkv|mpeg)$/i;
+
+function isMediaFile(file: File) {
+    return (
+        file.type.startsWith("audio/") ||
+        file.type.startsWith("video/") ||
+        AUDIO_EXT.test(file.name) ||
+        VIDEO_EXT.test(file.name)
+    );
+}
+
 export default function AudioUploader({ onFileUpload }: AudioUploaderProps) {
     const [isDragOver, setIsDragOver] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const accept = useCallback((file: File | undefined) => {
+        if (!file) return;
+        if (!isMediaFile(file)) {
+            setError(`"${file.name}" doesn't look like an audio or video file.`);
+            return;
+        }
+        setError(null);
+        onFileUpload(file);
+    }, [onFileUpload]);
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -24,53 +47,45 @@ export default function AudioUploader({ onFileUpload }: AudioUploaderProps) {
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         setIsDragOver(false);
+        accept(e.dataTransfer.files[0]);
+    }, [accept]);
 
-        const file = e.dataTransfer.files[0];
-        if (file && isMediaFile(file)) {
-            onFileUpload(file);
-        }
-    }, [onFileUpload]);
-
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file && isMediaFile(file)) {
-            onFileUpload(file);
-        }
-    };
-
-    const isMediaFile = (file: File) => {
-        // Accept audio files
-        if (file.type.startsWith("audio/") ||
-            /\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(file.name)) {
-            return true;
-        }
-        // Accept video files
-        if (file.type.startsWith("video/") ||
-            /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name)) {
-            return true;
-        }
-        return false;
-    };
+    const openPicker = () => fileInputRef.current?.click();
 
     return (
         <div
             className={`upload-zone ${isDragOver ? "dragover" : ""}`}
+            role="button"
+            tabIndex={0}
+            aria-label="Upload an audio or video file. Press Enter to browse."
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={openPicker}
+            onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openPicker();
+                }
+            }}
         >
             <input
                 ref={fileInputRef}
                 type="file"
                 accept="audio/*,video/*"
-                onChange={handleFileSelect}
+                onChange={(e) => {
+                    accept(e.target.files?.[0]);
+                    e.target.value = "";
+                }}
                 className="hidden"
+                tabIndex={-1}
+                aria-hidden
             />
 
             <div className="flex flex-col items-center">
                 {/* Icon */}
                 <div
+                    aria-hidden
                     className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 animate-float"
                     style={{
                         background: isDragOver
@@ -94,8 +109,8 @@ export default function AudioUploader({ onFileUpload }: AudioUploaderProps) {
                 </p>
 
                 {/* Supported formats */}
-                <div className="flex items-center gap-2 flex-wrap justify-center">
-                    {["MP3", "WAV", "FLAC", "MP4", "WebM", "MOV"].map((format) => (
+                <div className="flex items-center gap-2 flex-wrap justify-center" aria-label="Supported formats">
+                    {["MP3", "WAV", "FLAC", "M4A", "MP4", "WebM", "MOV", "MKV"].map((format) => (
                         <span
                             key={format}
                             className="px-3 py-1 rounded-full text-xs font-medium"
@@ -108,6 +123,12 @@ export default function AudioUploader({ onFileUpload }: AudioUploaderProps) {
                         </span>
                     ))}
                 </div>
+
+                {error && (
+                    <p role="alert" className="mt-4 text-sm" style={{ color: "var(--ghost-error)" }}>
+                        {error}
+                    </p>
+                )}
             </div>
         </div>
     );

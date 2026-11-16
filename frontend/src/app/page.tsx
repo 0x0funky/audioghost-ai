@@ -1,35 +1,44 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Header from "@/components/Header";
 import AuthModal from "@/components/AuthModal";
 import AudioUploader from "@/components/AudioUploader";
 import WaveformEditor from "@/components/WaveformEditor";
-import SeparationPanel from "@/components/SeparationPanel";
+import SeparationPanel, { type SeparationSettings } from "@/components/SeparationPanel";
 import ProgressTracker from "@/components/ProgressTracker";
 import StemMixer from "@/components/StemMixer";
 import VideoStemMixer from "@/components/VideoStemMixer";
+import { apiUrl, loadPref, savePref } from "@/lib/api";
+import type { TaskResult } from "@/lib/types";
 
-interface TaskResult {
-  original_path: string;
-  ghost_path: string;
-  clean_path: string;
-  description: string;
-  mode: string;
-  audio_duration?: number;
-  processing_time?: number;
-  model_size?: string;
-  video_path?: string;
-  is_video?: boolean;
-}
+type TaskStatus = "idle" | "pending" | "processing" | "completed" | "failed" | "cancelled";
 
 interface TaskState {
   taskId: string | null;
-  status: "idle" | "pending" | "processing" | "completed" | "failed";
+  status: TaskStatus;
   progress: number;
   message: string;
   result: TaskResult | null;
+  queuePosition?: number | null;
 }
+
+interface SystemStatus {
+  reachable: boolean;
+  redis: boolean;
+  worker: boolean;
+}
+
+const IDLE_TASK: TaskState = { taskId: null, status: "idle", progress: 0, message: "", result: null };
+
+const DEFAULT_SETTINGS: SeparationSettings = {
+  modelSize: "base",
+  chunkDuration: 25,
+  useFloat32: false,
+  quality: "balanced",
+  stereo: false,
+  modelVariant: "default",
+};
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -39,154 +48,159 @@ export default function Home() {
   const [isVideo, setIsVideo] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [selectedRegion, setSelectedRegion] = useState<{ start: number; end: number } | null>(null);
+  const [system, setSystem] = useState<SystemStatus | null>(null);
 
-  // Persistent separation settings (won't reset on "New")
-  const [separationSettings, setSeparationSettings] = useState({
-    modelSize: "base" as "small" | "base" | "large",
-    chunkDuration: 25,
-    useFloat32: false,
-  });
+  // Separation settings persist across "New" and across sessions.
+  // (The panel only renders after a file is chosen, so reading localStorage here can't cause a hydration mismatch.)
+  const [separationSettings, setSeparationSettings] = useState<SeparationSettings>(
+    () => loadPref("settings", DEFAULT_SETTINGS)
+  );
+  const updateSettings = (settings: SeparationSettings) => {
+    setSeparationSettings(settings);
+    savePref("settings", settings);
+  };
 
-  const [task, setTask] = useState<TaskState>({
-    taskId: null,
-    status: "idle",
-    progress: 0,
-    message: "",
-    result: null,
-  });
+  const [task, setTask] = useState<TaskState>(IDLE_TASK);
+  // Polling stops as soon as the task it was started for is no longer current.
+  const activeTaskRef = useRef<string | null>(null);
 
-  // Check auth status on mount
-  useEffect(() => {
-    checkAuthStatus();
+  const checkSystem = useCallback(() => {
+    fetch(apiUrl("/api/system/status"))
+      .then(res => res.json())
+      .then(data => setSystem({ reachable: true, redis: !!data.redis, worker: !!data.worker }))
+      .catch(() => setSystem({ reachable: false, redis: false, worker: false }));
   }, []);
 
-  // Toggle theme
+  useEffect(() => {
+    fetch(apiUrl("/api/auth/status"))
+      .then(res => res.json())
+      .then(data => setIsAuthenticated(!!data.authenticated))
+      .catch(error => console.error("Failed to check auth status:", error));
+    checkSystem();
+  }, [checkSystem]);
+
   useEffect(() => {
     document.body.classList.toggle("light-mode", !isDarkMode);
   }, [isDarkMode]);
 
-  const checkAuthStatus = async () => {
-    try {
-      const res = await fetch("http://localhost:8000/api/auth/status");
-      const data = await res.json();
-      setIsAuthenticated(data.authenticated);
-    } catch (error) {
-      console.error("Failed to check auth status:", error);
-    }
+  const resetTask = () => {
+    activeTaskRef.current = null;
+    setTask(IDLE_TASK);
   };
 
   const handleFileUpload = (file: File) => {
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
     setAudioFile(file);
-    const url = URL.createObjectURL(file);
-    setAudioUrl(url);
-
-    // Detect if file is video
-    const isVideoFile = file.type.startsWith("video/") ||
-      /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name);
-    setIsVideo(isVideoFile);
-
-    // Reset task state
-    setTask({
-      taskId: null,
-      status: "idle",
-      progress: 0,
-      message: "",
-      result: null,
-    });
+    setAudioUrl(URL.createObjectURL(file));
+    setIsVideo(file.type.startsWith("video/") || /\.(mp4|webm|mov|avi|mkv|m4v|mpeg)$/i.test(file.name));
+    setSelectedRegion(null);
+    resetTask();
   };
 
   const handleReset = () => {
-    // Clean up the object URL to free memory
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl);
-    }
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
     setAudioFile(null);
     setAudioUrl(null);
     setIsVideo(false);
     setSelectedRegion(null);
-    setTask({
-      taskId: null,
-      status: "idle",
-      progress: 0,
-      message: "",
-      result: null,
-    });
+    resetTask();
   };
 
-  const handleSeparation = async (
-    description: string,
-    mode: "extract" | "remove",
-    modelSize: string = "base",
-    chunkDuration: number = 25,
-    useFloat32: boolean = false
-  ) => {
-    if (!audioFile) return;
-
-    const formData = new FormData();
-    formData.append("file", audioFile);
-    formData.append("description", description);
-    formData.append("mode", mode);
-    formData.append("model_size", modelSize);
-    formData.append("chunk_duration", chunkDuration.toString());
-    formData.append("use_float32", useFloat32.toString());
-
-    if (selectedRegion) {
-      formData.append("start_time", selectedRegion.start.toString());
-      formData.append("end_time", selectedRegion.end.toString());
-    }
-
-    try {
-      const res = await fetch("http://localhost:8000/api/separate/", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      setTask({
-        taskId: data.task_id,
-        status: "pending",
-        progress: 0,
-        message: "Task submitted...",
-        result: null,
-      });
-
-      // Start polling for status
-      pollTaskStatus(data.task_id);
-    } catch (error) {
-      console.error("Failed to submit separation task:", error);
-      setTask(prev => ({
-        ...prev,
-        status: "failed",
-        message: "Failed to submit task",
-      }));
-    }
-  };
-
-  const pollTaskStatus = async (taskId: string) => {
+  const pollTaskStatus = (taskId: string) => {
+    let failures = 0;
     const poll = async () => {
+      if (activeTaskRef.current !== taskId) return;
       try {
-        const res = await fetch(`http://localhost:8000/api/tasks/${taskId}`);
+        const res = await fetch(apiUrl(`/api/tasks/${taskId}`));
         const data = await res.json();
-
+        failures = 0;
+        if (activeTaskRef.current !== taskId) return;
+        if (data.status === "cancelled") {
+          resetTask();
+          return;
+        }
         setTask({
           taskId,
           status: data.status,
           progress: data.progress,
           message: data.message || "",
           result: data.result || null,
+          queuePosition: data.queue_position ?? null,
         });
-
         if (data.status !== "completed" && data.status !== "failed") {
           setTimeout(poll, 1000);
         }
       } catch (error) {
+        failures += 1;
         console.error("Failed to poll task status:", error);
+        if (activeTaskRef.current !== taskId) return;
+        setTask(prev => ({ ...prev, message: "Lost connection to the backend - retrying..." }));
+        setTimeout(poll, Math.min(10000, 1000 * 2 ** Math.min(failures, 4)));
       }
     };
-
     poll();
   };
+
+  const handleSeparation = async (description: string, mode: "extract" | "remove") => {
+    if (!audioFile) return;
+    const s = separationSettings;
+
+    const formData = new FormData();
+    formData.append("file", audioFile);
+    formData.append("description", description);
+    formData.append("mode", mode);
+    formData.append("model_size", s.modelSize);
+    formData.append("model_variant", s.modelVariant);
+    formData.append("quality", s.quality);
+    formData.append("chunk_duration", s.chunkDuration.toString());
+    formData.append("use_float32", s.useFloat32.toString());
+    formData.append("stereo", s.stereo.toString());
+    if (selectedRegion && !isVideo) {
+      formData.append("start_time", selectedRegion.start.toString());
+      formData.append("end_time", selectedRegion.end.toString());
+    }
+
+    setTask({ ...IDLE_TASK, status: "pending", message: "Uploading..." });
+    try {
+      const res = await fetch(apiUrl("/api/separate/"), { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof data.detail === "string" ? data.detail : "The server rejected the request");
+      }
+      activeTaskRef.current = data.task_id;
+      setTask({ ...IDLE_TASK, taskId: data.task_id, status: "pending", message: "Task submitted..." });
+      pollTaskStatus(data.task_id);
+      checkSystem();
+    } catch (error) {
+      console.error("Failed to submit separation task:", error);
+      const message = error instanceof Error && error.message !== "Failed to fetch"
+        ? error.message
+        : "Could not reach the AudioGhost backend. Is start.bat running?";
+      setTask({ ...IDLE_TASK, status: "failed", message });
+      checkSystem();
+    }
+  };
+
+  const handleCancel = async () => {
+    const taskId = task.taskId;
+    resetTask();
+    if (!taskId) return;
+    try {
+      await fetch(apiUrl(`/api/tasks/${taskId}`), { method: "DELETE" });
+    } catch (error) {
+      console.error("Failed to cancel task:", error);
+    }
+  };
+
+  const systemWarning = (() => {
+    if (!system) return null;
+    if (!system.reachable) return "Can't reach the AudioGhost backend on port 8000. Start it with start.bat (or uvicorn).";
+    if (!system.redis) return "Redis is not running. Start it with start.bat or `docker-compose up -d`.";
+    if (!system.worker) return "The separation worker is not running yet. If this persists, check the \"AudioGhost Worker\" window.";
+    return null;
+  })();
+
+  const isBusy = task.status === "pending" || task.status === "processing";
 
   return (
     <main
@@ -211,6 +225,42 @@ export default function Home() {
           padding: "32px 24px"
         }}
       >
+        {systemWarning && (
+          <div
+            role="alert"
+            style={{
+              marginBottom: "24px",
+              padding: "14px 18px",
+              borderRadius: "12px",
+              background: "rgba(245, 158, 11, 0.1)",
+              border: "1px solid rgba(245, 158, 11, 0.3)",
+              color: "var(--ghost-warning)",
+              fontSize: "0.9rem",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "12px",
+              alignItems: "center"
+            }}
+          >
+            <span>⚠️ {systemWarning}</span>
+            <button
+              onClick={checkSystem}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "8px",
+                border: "1px solid rgba(245, 158, 11, 0.4)",
+                background: "transparent",
+                color: "var(--ghost-warning)",
+                cursor: "pointer",
+                fontSize: "0.8rem",
+                flexShrink: 0
+              }}
+            >
+              Check again
+            </button>
+          </div>
+        )}
+
         {/* Hero Section */}
         {!audioUrl && (
           <div style={{ textAlign: "center", marginBottom: "48px" }}>
@@ -244,13 +294,15 @@ export default function Home() {
                 </h2>
                 <button
                   onClick={handleReset}
+                  disabled={isBusy}
                   style={{
                     padding: "8px 16px",
                     borderRadius: "8px",
                     background: "var(--bg-tertiary)",
                     color: "var(--text-secondary)",
                     border: "1px solid var(--border-color)",
-                    cursor: "pointer",
+                    cursor: isBusy ? "not-allowed" : "pointer",
+                    opacity: isBusy ? 0.5 : 1,
                     fontSize: "0.875rem",
                     display: "flex",
                     alignItems: "center",
@@ -278,6 +330,7 @@ export default function Home() {
                   <video
                     src={audioUrl}
                     controls
+                    aria-label={`Preview of ${audioFile?.name ?? "uploaded video"}`}
                     style={{
                       width: "100%",
                       maxHeight: "400px",
@@ -292,7 +345,7 @@ export default function Home() {
                     marginTop: "12px",
                     textAlign: "center"
                   }}>
-                    Audio will be extracted from this video for separation processing
+                    The video&apos;s audio track will be separated; download the result as audio or as a new video
                   </p>
                 </div>
               ) : (
@@ -305,25 +358,26 @@ export default function Home() {
             </>
           )}
 
-
           {/* Separation Controls */}
           {audioUrl && task.status === "idle" && (
             <SeparationPanel
               onSeparate={handleSeparation}
               isAuthenticated={isAuthenticated}
               onAuthRequired={() => setShowAuthModal(true)}
-              hasRegion={!!selectedRegion}
+              hasRegion={!!selectedRegion && !isVideo}
               settings={separationSettings}
-              onSettingsChange={setSeparationSettings}
+              onSettingsChange={updateSettings}
             />
           )}
 
           {/* Progress Tracker */}
-          {(task.status === "pending" || task.status === "processing") && (
+          {isBusy && (
             <ProgressTracker
-              status={task.status}
+              status={task.status as "pending" | "processing"}
               progress={task.progress}
               message={task.message}
+              queuePosition={task.queuePosition}
+              onCancel={task.taskId ? handleCancel : undefined}
             />
           )}
 
@@ -332,50 +386,28 @@ export default function Home() {
             task.result.is_video ? (
               <VideoStemMixer
                 taskId={task.taskId}
-                description={task.result.description}
-                audioDuration={task.result.audio_duration}
-                processingTime={task.result.processing_time}
-                modelSize={task.result.model_size}
+                result={task.result}
                 onUploadNew={handleReset}
-                onNewSeparation={() => {
-                  setTask({
-                    taskId: null,
-                    status: "idle",
-                    progress: 0,
-                    message: "",
-                    result: null,
-                  });
-                }}
+                onNewSeparation={resetTask}
               />
             ) : (
               <StemMixer
                 taskId={task.taskId}
-                description={task.result.description}
-                audioDuration={task.result.audio_duration}
-                processingTime={task.result.processing_time}
-                modelSize={task.result.model_size}
+                result={task.result}
                 onUploadNew={handleReset}
-                onNewSeparation={() => {
-                  setTask({
-                    taskId: null,
-                    status: "idle",
-                    progress: 0,
-                    message: "",
-                    result: null,
-                  });
-                }}
+                onNewSeparation={resetTask}
               />
             )
           )}
 
           {/* Error State */}
           {task.status === "failed" && (
-            <div className="glass-card p-6 text-center">
+            <div className="glass-card p-6 text-center" role="alert">
               <div className="text-red-400 text-xl mb-2">❌ Separation Failed</div>
-              <p style={{ color: "var(--text-secondary)" }}>{task.message}</p>
+              <p style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>{task.message}</p>
               <button
                 className="btn-primary mt-4"
-                onClick={() => setTask({ taskId: null, status: "idle", progress: 0, message: "", result: null })}
+                onClick={resetTask}
               >
                 Try Again
               </button>
