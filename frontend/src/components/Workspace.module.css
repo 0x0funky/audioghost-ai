@@ -1,8 +1,11 @@
+/* Desktop: a fixed-height app. The tracks and the side panel scroll inside, so
+   the transport and the mix bar stay in view. Narrow screens scroll the page. */
 .workspace {
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
-  min-height: calc(100vh - 61px);
+  height: calc(100vh - 61px);
+  min-height: 560px;
 }
 
 .main {
@@ -10,6 +13,34 @@
   flex: 999 1 720px;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.tracksArea {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.side {
+  flex: 1 1 340px;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+@media (max-width: 1080px) {
+  .workspace,
+  .main,
+  .side {
+    height: auto;
+  }
+
+  .tracksArea,
+  .side {
+    overflow: visible;
+  }
 }
 
 .videoWrap {

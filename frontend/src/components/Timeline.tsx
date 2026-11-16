@@ -188,7 +188,7 @@ export function Timeline({
     return () => observer.disconnect();
   }, []);
 
-  const head = visible && visible < 720 ? 168 : 248;
+  const head = visible && visible < 720 ? 176 : 272;
   const laneWidth = Math.max(200, (visible || 1000) - head) * zoom;
 
   // Keep the playhead in view while playing when zoomed in.

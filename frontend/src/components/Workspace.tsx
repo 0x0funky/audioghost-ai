@@ -363,22 +363,24 @@ export function Workspace({
             </IconButton>
           </div>
         )}
-        <Timeline
-          session={session}
-          player={player}
-          colors={colors}
-          mixer={mixer}
-          holdOriginal={holdOriginal}
-          actions={actions}
-          regions={regions}
-          pending={pending}
-          activeKey={activeKey}
-          tool={tool}
-          zoom={zoom}
-          onAddRegion={addRegion}
-          onRemoveRegion={(id) => setRegions((current) => current.filter((r) => r.id !== id))}
-          onNotice={setNotice}
-        />
+        <div className={styles.tracksArea}>
+          <Timeline
+            session={session}
+            player={player}
+            colors={colors}
+            mixer={mixer}
+            holdOriginal={holdOriginal}
+            actions={actions}
+            regions={regions}
+            pending={pending}
+            activeKey={activeKey}
+            tool={tool}
+            zoom={zoom}
+            onAddRegion={addRegion}
+            onRemoveRegion={(id) => setRegions((current) => current.filter((r) => r.id !== id))}
+            onNotice={setNotice}
+          />
+        </div>
         <div className={styles.mixBar}>
           <div className={styles.mixText}>
             <SectionLabel as="span">What you hear</SectionLabel>
@@ -396,6 +398,7 @@ export function Workspace({
         </div>
       </main>
 
+      <div className={styles.side}>
       <SeparatePanel
         session={session}
         colors={colors}
@@ -416,6 +419,7 @@ export function Workspace({
         inputRef={inputRef}
         estimate={estimate}
       />
+      </div>
 
       {exportKind && (
         <ExportDialog
