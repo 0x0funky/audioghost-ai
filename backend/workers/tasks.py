@@ -33,10 +33,15 @@ QUALITY_PRESETS = ("fast", "balanced", "high")
 
 
 def _precision(use_float32: bool, device) -> str:
-    """fp32 on request/CPU; otherwise AUDIOGHOST_PRECISION (fp16 default, or bf16)."""
+    """
+    fp32 on request and on CPU. CUDA: AUDIOGHOST_PRECISION (fp16 default, or
+    bf16). Apple MPS (experimental): fp32 unless AUDIOGHOST_PRECISION says otherwise.
+    """
     if use_float32 or device.type == "cpu":
         return "fp32"
-    preferred = os.environ.get("AUDIOGHOST_PRECISION", "fp16").strip().lower()
+    preferred = os.environ.get("AUDIOGHOST_PRECISION", "").strip().lower()
+    if device.type == "mps":
+        return preferred if preferred in ("fp16", "bf16", "fp32") else "fp32"
     return preferred if preferred in ("fp16", "bf16") else "fp16"
 
 
@@ -77,8 +82,9 @@ def _warm_up(**_kwargs):
     def run():
         try:
             import torch  # noqa: F401
+
+            from workers import sam_lite  # installs platform shims first
             import sam_audio  # noqa: F401
-            from workers import sam_lite  # noqa: F401
 
             logger.info("Warm-up: SAM-Audio libraries imported")
             preload = os.environ.get("AUDIOGHOST_PRELOAD_MODEL", "").strip().lower()
@@ -118,8 +124,6 @@ def separate_audio_task(
       ``{task_id}.ghost.wav``    - the described sound ("isolated")
       ``{task_id}.clean.wav``    - everything else ("without")
     """
-    import torch
-
     from workers import audio_io, sam_lite
 
     task_id = self.request.id
@@ -244,8 +248,7 @@ def separate_audio_task(
     finally:
         queue_state.mark_finished(task_id)
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        sam_lite.empty_device_cache()
 
 
 @celery_app.task(bind=True)

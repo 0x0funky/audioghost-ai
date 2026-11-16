@@ -13,6 +13,10 @@ echo.
 set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 
+:: FFmpeg DLLs downloaded by install.bat (used by TorchCodec and for video export).
+:: The service windows below inherit this PATH.
+if exist "%SCRIPT_DIR%ffmpeg\bin" set "PATH=%SCRIPT_DIR%ffmpeg\bin;%PATH%"
+
 :: Check if Docker Redis is already running on port 6379
 echo [1/4] Checking Redis...
 netstat -an | findstr ":6379.*LISTENING" >nul 2>&1

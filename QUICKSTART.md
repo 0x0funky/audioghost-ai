@@ -1,6 +1,7 @@
 # AudioGhost AI 啟動指南
 
-> 最簡單的方式：執行 `install.bat` 一次，之後每次用 `start.bat` 啟動、`stop.bat` 關閉。
+> 最簡單的方式：Windows 執行 `install.bat` 一次，之後用 `start.bat` 啟動、`stop.bat` 關閉。
+> macOS（Apple Silicon）/ Linux：`./install.sh`、`./start.sh`、`./stop.sh`（Mac 目前用 CPU 運算，較慢）。
 > 以下是手動安裝步驟（Windows / PowerShell）。
 
 ## 1. 啟動 Redis
@@ -24,20 +25,24 @@ pip install torch==2.9.0+cu126 torchvision==0.24.0+cu126 torchaudio==2.9.0+cu126
 pip install torch==2.9.0+cu128 torchvision==0.24.0+cu128 torchaudio==2.9.0+cu128 --index-url https://download.pytorch.org/whl/cu128 --extra-index-url https://pypi.org/simple
 ```
 
-## 4. 安裝 FFmpeg 7（TorchCodec 需要）
-```powershell
+## 4. 安裝 FFmpeg（TorchCodec 需要）
+Windows：下載 FFmpeg 8 的 shared build（例如 BtbN 的 `ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip`：https://github.com/BtbN/FFmpeg-Builds/releases/tag/latest ），解壓縮後把 `bin` 資料夾加入 PATH（`install.bat` 會自動做）。
+目前請避免在 Windows 上用 conda-forge 的 FFmpeg：它的套件裝出兩份不同的 `intl-8.dll`，會導致載入失敗（#10）。
+
+macOS / Linux：
+```bash
 conda install -c conda-forge "ffmpeg=7" -y
 ```
 
 ## 5. 安裝 SAM Audio（固定版本）
 ```powershell
-pip install "git+https://github.com/facebookresearch/sam-audio.git@bb4c6999d2677c7402360e426afc01ddfad6dce0"
+pip install -c backend\constraints.txt "git+https://github.com/facebookresearch/sam-audio.git@bb4c6999d2677c7402360e426afc01ddfad6dce0"
 ```
 
 ## 6. 安裝 Backend 依賴（會把 transformers / huggingface_hub 鎖在相容版本）
 ```powershell
 cd backend
-pip install -r requirements.txt
+pip install -c constraints.txt -r requirements.txt
 ```
 
 ## 7. 啟動 Backend API

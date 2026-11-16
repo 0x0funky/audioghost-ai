@@ -1,0 +1,45 @@
+# SAM-Audio dependencies for platforms without decord / xformers wheels
+# (Apple Silicon). install.sh uses this list with `--no-deps` installs of
+# perception-models and sam-audio. Neither decord nor xformers is used for
+# text prompting; AudioGhost registers a stand-in for xformers at runtime
+# (backend/workers/compat.py). Commits match the tested Windows/Linux setup.
+
+# perception-models requirements, minus decord and xformers
+numpy
+omegaconf
+msgspec
+rouge-score
+sacrebleu
+sentencepiece
+tiktoken
+blobfile
+wandb
+viztracer
+lm-eval
+scipy
+pynvml
+orjson
+einops
+pillow
+pyahocorasick
+iopath
+torchdata
+torchcodec
+timm
+opencv-python
+pycocoevalcap
+scikit-learn
+tokenizers
+webdataset
+fsspec
+datatrove
+ftfy
+transformers>=4.54.0,<5
+
+# sam-audio requirements, minus perception-models and torch/torchvision/torchaudio
+dacvae @ git+https://github.com/facebookresearch/dacvae.git@34e0b0dbb6400140da62f8f6366359e2f0377a1c
+audiobox_aesthetics
+imagebind @ git+https://github.com/facebookresearch/ImageBind.git@53680b02d7e37b19b124fa37bae4b6c98c38f5be
+laion-clap @ git+https://github.com/lematt1991/CLAP.git@b85cb7ecac0af7d064cbf03ebd990e709e959fe7
+pydub
+torchdiffeq

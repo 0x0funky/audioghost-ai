@@ -73,9 +73,30 @@ weights, new inference engine (`backend/workers/sam_lite.py`).
 - Accessibility (#6): labelled controls, switches and sliders, keyboard
   upload, live progress announcements.
 
+### macOS & Linux
+- `install.sh` / `start.sh` / `stop.sh` for Linux (x86_64, NVIDIA or CPU) and
+  macOS (Apple Silicon), based on community PR #8 by @ShmuelOps: Celery runs
+  with `--pool=solo`, every service gets its own process group and
+  `stop.sh` only stops what `start.sh` started.
+- Apple Silicon: SAM-Audio is installed without decord/xformers (no wheels,
+  unused for text prompts; `backend/requirements-lean.txt`) and AudioGhost
+  provides a stand-in for xformers' import. Runs on the CPU by default; the
+  Apple GPU can be tried with `AUDIOGHOST_DEVICE=mps` (experimental, fp32).
+
 ### Install
-- `install.bat` pins SAM-Audio (`bb4c699`), FFmpeg 7, transformers and
-  huggingface_hub, picks CUDA 12.8 wheels for RTX 50-series GPUs and verifies
-  the environment at the end.
+- `backend/constraints.txt` pins torch 2.9.0 / torchcodec 0.9.1 /
+  xformers 0.0.33.post1 for every `pip install`: an unpinned xformers (now
+  0.0.34+, built for torch 2.10) made fresh installs replace the CUDA build of
+  PyTorch with a CPU build, or fail outright.
+- `install.bat` pins SAM-Audio (`bb4c699`), transformers and huggingface_hub,
+  picks CUDA 12.8 wheels for RTX 50-series GPUs and verifies the environment
+  at the end.
+- Windows: "entry point not found ... libintl_bind_textdomain_codeset ...
+  gdk_pixbuf-2.0-0.dll" during install (#10) and "Could not load
+  libtorchcodec" afterwards. conda-forge's Windows FFmpeg pulls in GTK
+  packages, and `libglib` and `libintl` both install an `intl-8.dll`; the one
+  that wins lacks the `libintl_*` exports. `install.bat` now downloads a
+  self-contained FFmpeg 8.1 shared build (BtbN) into `ffmpeg\`, and
+  `start.bat` puts it on PATH.
 - Frontend: Next.js 16.4.6 / React 19.2.9 (fixes a critical Next.js
   advisory), unused axios removed.

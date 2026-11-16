@@ -1,0 +1,14 @@
+# Versions AudioGhost is tested with. The installers pass this file as
+#   pip install -c backend/constraints.txt ...
+# so SAM-Audio's unpinned dependencies can't silently swap them out.
+# Without it a fresh install can pull xformers 0.0.34+ (needs torch 2.10),
+# which makes pip replace the CUDA build of torch 2.9 with a CPU build from
+# PyPI, and a torchcodec that doesn't match torch ("Could not load libtorchcodec").
+torch==2.9.0
+torchvision==0.24.0
+torchaudio==2.9.0
+torchcodec==0.9.1
+xformers==0.0.33.post1
+transformers>=4.54.0,<5
+huggingface_hub>=0.34.0,<1.0
+numpy<2

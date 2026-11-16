@@ -97,3 +97,6 @@ pyproject.toml
 *.ckpt
 *.safetensors
 debug_*.jpg
+.audioghost/
+# FFmpeg downloaded by install.bat
+ffmpeg/

@@ -43,7 +43,10 @@ import warnings
 
 import torch
 
+from .compat import ensure_compat
+
 logger = logging.getLogger(__name__)
+ensure_compat()  # must run before anything imports sam_audio
 
 # torch.backends.cudnn.flags() (used by SAM-Audio and by us) still sets TF32 via
 # the legacy API, which makes PyTorch 2.9 print a deprecation notice per call.
@@ -357,8 +360,8 @@ def resolve_device(requested: Optional[str] = None) -> torch.device:
     """
     ``AUDIOGHOST_DEVICE`` env var > explicit request > CUDA > CPU.
 
-    Apple MPS is opt-in only (``AUDIOGHOST_DEVICE=mps``) because bf16 on MPS
-    crashed the worker in community testing (see PR #7).
+    Apple GPUs (MPS) are opt-in (``AUDIOGHOST_DEVICE=mps``, experimental): the
+    v1.0 worker crashed there (PR #7), so macOS defaults to the CPU.
     """
     requested = os.environ.get("AUDIOGHOST_DEVICE") or requested
     if requested:
@@ -578,8 +581,15 @@ def unload(lite: Optional[LiteModel]) -> None:
     lite.model.to("cpu")
     del lite.model
     gc.collect()
+    empty_device_cache()
+
+
+def empty_device_cache() -> None:
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and mps.is_available():
+        torch.mps.empty_cache()
 
 
 # --------------------------------------------------------------------------- #

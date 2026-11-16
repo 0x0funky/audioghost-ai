@@ -15,7 +15,8 @@ Describe the sound you want to extract or remove using natural language. Powered
 | ⚡ **~4–6× faster** | A 4:26 song with the Small model: **95 s → 17 s** on an RTX 4090 ([benchmarks](#-performance)) |
 | 🎯 **More precise** | On our test clips the new mixed precision stays within 44–57 dB SNR of a strict fp32 run (v1.0's default path: 25–32 dB) |
 | 💾 **~25 GB less to download** | The first run no longer fetches (or builds) ImageBind, CLAP, SAM-Audio-Judge and PE-A-Frame, which lite mode threw away |
-| 🔧 **Installs again** | Fixes the `_from_pretrained() missing ... 'proxies' and 'resume_download'` error ([#9](https://github.com/0x0funky/audioghost-ai/issues/9)); installer picks the CUDA 12.8 build for RTX 50-series |
+| 🔧 **Installs again** | Fixes the `_from_pretrained() missing ... 'proxies' and 'resume_download'` error ([#9](https://github.com/0x0funky/audioghost-ai/issues/9)) and the `gdk_pixbuf-2.0-0.dll` popup / `Could not load libtorchcodec` on Windows ([#10](https://github.com/0x0funky/audioghost-ai/issues/10)); pins torch/xformers so pip can't swap in a CPU build; CUDA 12.8 for RTX 50-series |
+| 🍎🐧 **macOS & Linux** | One-click `install.sh` / `start.sh` / `stop.sh` (based on community [PR #8](https://github.com/0x0funky/audioghost-ai/pull/8)). Linux uses your NVIDIA GPU; Apple Silicon runs on the CPU (Apple GPU is experimental) |
 | 🎚️ **Seamless long files** | Overlapping, crossfaded chunks - no seams, nothing dropped at the end |
 | 🕒 **Temporal Lock works** | The selected region was ignored in v1.0 |
 | ✨ **New options** | Speed/Quality presets · Stereo · Meta's `-tv` precision models · WAV/FLAC/MP3 + ZIP downloads with readable names · working Cancel · queue position · download progress |
@@ -73,7 +74,7 @@ https://github.com/user-attachments/assets/6b8c08a8-c84f-4fc3-83ad-5703f474fc1b
 - 🖱️ **Visual Prompting** - click an object in the video to isolate its sound (SAM 2.1 / [SAM 3.1](https://huggingface.co/facebook/sam3.1) masks + SAM-Audio `-tv`)
 - 🎼 **Multi-stem in one pass** - e.g. vocals + drums + bass from a single run
 - 🎚️ **Specialised engines** for standard music stems (BS-/Mel-RoFormer) next to SAM-Audio for "any sound"
-- 🍎 **macOS / Linux scripts** (community PR [#8](https://github.com/0x0funky/audioghost-ai/pull/8))
+- 🍏 **Apple GPU (MPS) by default** once it's verified on more Macs (opt in today with `AUDIOGHOST_DEVICE=mps`)
 
 ## Architecture
 
@@ -102,17 +103,19 @@ https://github.com/user-attachments/assets/6b8c08a8-c84f-4fc3-83ad-5703f474fc1b
 
 ## Requirements
 
-- **Windows 10/11** (one-click scripts) or Linux (manual setup)
+- **Windows 10/11** or **Linux (x86_64)** with an **NVIDIA GPU**, or a **Mac with Apple Silicon** (CPU only for now, so expect minutes rather than seconds; Intel Macs are not supported by PyTorch 2.9)
 - **NVIDIA GPU**: 6 GB+ for Small, 8 GB+ for Base, 12 GB+ for Large (measured peaks: 4.2 / 5.4 / 8.9 GB with 25 s chunks; shorter chunks need less)
-- **Anaconda / Miniconda** and **Node.js 18+**
+- **Anaconda / Miniconda**, **Node.js 18+** and **git**
 - A **HuggingFace account** with access to [facebook/sam-audio-large](https://huggingface.co/facebook/sam-audio-large) (gated; approval can take a while)
 
-> 💡 PyTorch, FFmpeg and Redis are installed by `install.bat`. RTX 50-series cards get the CUDA 12.8 build automatically.
+> 💡 PyTorch, FFmpeg and Redis are installed by the installers. RTX 50-series cards get the CUDA 12.8 build automatically.
 
 ## 🚀 One-Click Installation (Recommended)
 
+### Windows
+
 ```bash
-# First time: creates the 'audioghost' conda env, installs everything (pinned), downloads Redis
+# First time: creates the 'audioghost' conda env, installs everything (pinned), downloads Redis and FFmpeg
 install.bat
 
 # Every day
@@ -120,7 +123,17 @@ start.bat     # starts Redis, API, worker and the web UI, then opens http://loca
 stop.bat      # stops only AudioGhost's own windows
 ```
 
-Updating an existing install: `git pull`, then run `install.bat` again (it re-applies the version pins).
+### macOS (Apple Silicon) / Linux (x86_64)
+
+```bash
+./install.sh  # conda env, PyTorch (CUDA build on Linux with an NVIDIA GPU), FFmpeg 7, Redis via Homebrew/apt
+./start.sh    # starts Redis, API, worker and web UI in the background (logs in ./logs), opens the browser
+./stop.sh     # stops exactly what start.sh started
+```
+
+On a Mac, SAM-Audio runs on the CPU: fine for short clips, slow for whole songs. The Apple GPU path can be tried with `AUDIOGHOST_DEVICE=mps ./start.sh` (experimental).
+
+Updating an existing install: `git pull`, then run the installer again (it re-applies the version pins).
 
 ---
 
@@ -148,8 +161,11 @@ pip install torch==2.9.0+cu126 torchvision==0.24.0+cu126 torchaudio==2.9.0+cu126
 # RTX 50-series: replace cu126 with cu128 (all three packages and the index URL)
 ```
 
-### 4. Install FFmpeg 7 (required by TorchCodec)
+### 4. Install FFmpeg (required by TorchCodec)
 
+**Windows:** download an FFmpeg 8 *shared* build - e.g. [`ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip`](https://github.com/BtbN/FFmpeg-Builds/releases/tag/latest) - unzip it and add its `bin` folder to `PATH` (this is what `install.bat` does). Avoid conda-forge's FFmpeg on Windows for now: its packages currently ship two different `intl-8.dll` files, which breaks loading ([#10](https://github.com/0x0funky/audioghost-ai/issues/10)).
+
+**macOS / Linux:**
 ```bash
 conda install -c conda-forge "ffmpeg=7" -y
 ```
@@ -157,14 +173,16 @@ conda install -c conda-forge "ffmpeg=7" -y
 ### 5. Install SAM-Audio (pinned)
 
 ```bash
-pip install "git+https://github.com/facebookresearch/sam-audio.git@bb4c6999d2677c7402360e426afc01ddfad6dce0"
+pip install -c backend/constraints.txt "git+https://github.com/facebookresearch/sam-audio.git@bb4c6999d2677c7402360e426afc01ddfad6dce0"
 ```
+
+`backend/constraints.txt` keeps torch, torchcodec and xformers on the tested versions - without it pip may swap your CUDA build of PyTorch for a CPU build. (On Apple Silicon follow `install.sh`, which installs SAM-Audio without decord/xformers.)
 
 ### 6. Install backend dependencies
 
 ```bash
 cd backend
-pip install -r requirements.txt   # also pins transformers<5 and huggingface_hub<1.0
+pip install -c constraints.txt -r requirements.txt   # also pins transformers<5 and huggingface_hub<1.0
 ```
 
 ### 7. Install frontend dependencies
@@ -232,7 +250,7 @@ python sam_audio_lite.py live.flac "crowd noise" --stereo --start 12.5 --end 16 
 |---|---|---|
 | `AUDIOGHOST_PRECISION` | `fp16` | Transformer precision when High Quality is off (`fp16` or `bf16`) |
 | `AUDIOGHOST_PRELOAD_MODEL` | - | `small` / `base` / `large`: load a model when the worker starts |
-| `AUDIOGHOST_DEVICE` | auto | Force `cuda`, `cuda:1`, `cpu` (or `mps`, experimental) |
+| `AUDIOGHOST_DEVICE` | auto | Force `cuda`, `cuda:1`, `cpu`, or `mps` (Apple GPU, experimental; runs in fp32 unless `AUDIOGHOST_PRECISION` is set) |
 | `AUDIOGHOST_SAFE_CODEC` | `0` | `1` = use SAM-Audio's original (slow, cuDNN-off) codec path |
 | `AUDIOGHOST_RETENTION_HOURS` | `24` | Delete uploads/results older than this (`0` = keep) |
 | `AUDIOGHOST_MAX_UPLOAD_MB` | `2048` | Upload size limit |
@@ -268,10 +286,16 @@ Interactive docs: `http://localhost:8000/docs`
 Your `huggingface_hub` is 1.x. Run `pip install -r backend/requirements.txt` (pins `transformers<5`, `huggingface_hub<1.0`) or re-run `install.bat`.
 
 ### `Could not load libtorchcodec` / TorchCodec DLL errors
-TorchCodec needs FFmpeg's shared DLLs (FFmpeg 4-7). Inside the env run `conda install -c conda-forge "ffmpeg=7" -y`, or install the FFmpeg 7 **shared** build from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and add its `bin` folder to `PATH`, then restart the terminal.
+TorchCodec needs FFmpeg's shared libraries (FFmpeg 4-8). On Windows re-run `install.bat` (it downloads FFmpeg 8.1 into `ffmpeg\` and `start.bat` puts it on `PATH`), or install an FFmpeg 8 **shared** build from [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases) or [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and add its `bin` folder to `PATH`, then restart the terminal. On macOS / Linux: `conda install -c conda-forge "ffmpeg=7" -y` inside the env.
 
 ### "Entry point not found ... libintl / gdk_pixbuf-2.0-0.dll" during install ([#10](https://github.com/0x0funky/audioghost-ai/issues/10))
-Another program's GTK DLLs on `PATH` (GIMP, Inkscape, Git's `mingw64\bin`, ...) clash with conda's. Remove those folders from `PATH` for the install window, or use the gyan.dev FFmpeg build above, then re-run `install.bat`.
+conda-forge's Windows FFmpeg pulls in GTK packages, and two of them (`libglib` and `libintl`) currently install different `intl-8.dll` files. The one that wins lacks `libintl_bind_textdomain_codeset` and friends, so gdk-pixbuf shows this popup during install and TorchCodec later can't load FFmpeg. v1.1's `install.bat` no longer uses conda-forge's FFmpeg on Windows; it downloads a self-contained FFmpeg 8.1 build instead - just re-run it.
+
+### Separation suddenly runs on the CPU / `torch.cuda.is_available()` is False
+Something replaced the CUDA build of PyTorch (usually an unpinned `pip install` pulling a newer xformers). Re-run the installer, or reinstall PyTorch (manual setup step 3) and install packages with `-c backend/constraints.txt`.
+
+### macOS: slow, or "Intel Macs are not supported"
+Macs run SAM-Audio on the CPU by default - use the Small model, the Fast preset and short clips. PyTorch 2.9 only supports Apple Silicon. To try the Apple GPU: `AUDIOGHOST_DEVICE=mps ./start.sh` (experimental, feedback welcome).
 
 ### `CUDA error: no kernel image is available for execution on the device`
 RTX 50-series GPUs need the CUDA 12.8 PyTorch build - re-run `install.bat`, or reinstall PyTorch with `cu128` (manual setup step 3).
@@ -295,6 +319,8 @@ audioghost-ai/
 ├── backend/
 │   ├── main.py               # FastAPI app
 │   ├── settings.py           # paths & env configuration
+│   ├── constraints.txt       # tested versions of torch / torchcodec / xformers / transformers
+│   ├── requirements-lean.txt # SAM-Audio deps for Apple Silicon (no decord / xformers)
 │   ├── api/
 │   │   ├── auth.py           # HuggingFace auth
 │   │   ├── separate.py       # create tasks (validation, streaming upload)
@@ -304,12 +330,14 @@ audioghost-ai/
 │   │   ├── tasks.py          # job lifecycle (progress, cancel, outputs)
 │   │   ├── sam_lite.py       # SAM-Audio Lite engine
 │   │   ├── audio_io.py       # decode / encode / export helpers
+│   │   ├── compat.py         # platform shims (xformers stand-in on Apple Silicon)
 │   │   └── queue_state.py    # queue position, cancel flags
 │   └── tests/                # unit tests (python -m pytest backend/tests)
 ├── frontend/                 # Next.js app (src/app, src/components, src/lib)
 ├── scripts/benchmark.py      # performance benchmark
 ├── sam_audio_lite.py         # command-line tool
-├── install.bat / start.bat / stop.bat
+├── install.bat / start.bat / stop.bat   # Windows
+├── install.sh / start.sh / stop.sh      # macOS / Linux
 ├── CHANGELOG.md
 └── QUICKSTART.md             # 中文快速指南
 ```
@@ -321,5 +349,5 @@ AudioGhost is licensed under the MIT License. SAM-Audio code and weights are lic
 ## Credits
 
 - [SAM-Audio](https://github.com/facebookresearch/sam-audio) by Meta AI Research
-- **Core Optimization Logic**: Special thanks to [NilanEkanayake](https://github.com/NilanEkanayake) for the initial modifications in [Issue #24](https://github.com/facebookresearch/sam-audio/issues/24) that made VRAM reduction possible, and to [oulianov](https://github.com/oulianov) for the "don't build unused modules" approach in [PR #3](https://github.com/0x0funky/audioghost-ai/pull/3)
+- **Core Optimization Logic**: Special thanks to [NilanEkanayake](https://github.com/NilanEkanayake) for the initial modifications in [Issue #24](https://github.com/facebookresearch/sam-audio/issues/24) that made VRAM reduction possible, to [oulianov](https://github.com/oulianov) for the "don't build unused modules" approach in [PR #3](https://github.com/0x0funky/audioghost-ai/pull/3), and to [ShmuelOps](https://github.com/ShmuelOps) for the macOS / Linux groundwork in [PR #7](https://github.com/0x0funky/audioghost-ai/pull/7) and [PR #8](https://github.com/0x0funky/audioghost-ai/pull/8)
 - Built with ❤️ using Next.js, FastAPI, and Celery

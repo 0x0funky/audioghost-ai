@@ -116,3 +116,30 @@ def test_stem_filenames_are_readable_and_safe():
     name = stem_filename("訪談 錄音.m4a", 'music: "loud"? <now>', "ghost", "wav")
     assert name == "訪談 錄音 [music loud now].wav"
     assert not any(c in name for c in '\\/:*?"<>|')
+
+
+def test_xformers_stand_in_when_missing(monkeypatch):
+    import importlib.util
+
+    from workers import compat
+
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util, "find_spec",
+        lambda name, *a, **k: None if name == "xformers" else real_find_spec(name, *a, **k),
+    )
+    saved = {k: v for k, v in sys.modules.items() if k == "xformers" or k.startswith("xformers.")}
+    for key in saved:
+        del sys.modules[key]
+    try:
+        assert compat.install_xformers_stub() is True
+        from xformers.ops import AttentionBias, fmha  # what perception_models imports
+
+        assert isinstance(AttentionBias, type)
+        with pytest.raises(RuntimeError):
+            fmha.memory_efficient_attention(None, None, None)
+        assert compat.install_xformers_stub() is False  # idempotent
+    finally:
+        for key in [k for k in sys.modules if k == "xformers" or k.startswith("xformers.")]:
+            del sys.modules[key]
+        sys.modules.update(saved)
