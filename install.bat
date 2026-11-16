@@ -5,7 +5,7 @@ title AudioGhost AI - One-Click Installer
 echo.
 echo ╔══════════════════════════════════════════════════════════════╗
 echo ║           AudioGhost AI - One-Click Installer               ║
-echo ║                        v1.1                                  ║
+echo ║                        v1.2                                  ║
 echo ╚══════════════════════════════════════════════════════════════╝
 echo.
 

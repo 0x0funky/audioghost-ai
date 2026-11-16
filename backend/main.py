@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from api import auth, separate, sessions, tasks
 from settings import FRONTEND_ORIGIN_REGEX, FRONTEND_ORIGINS, OUTPUT_DIR, RETENTION_HOURS
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 
 @asynccontextmanager

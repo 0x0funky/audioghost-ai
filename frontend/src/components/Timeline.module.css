@@ -1,0 +1,340 @@
+.scroller {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.canvas {
+  position: relative;
+  min-width: 100%;
+  user-select: none;
+  touch-action: pan-y;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: var(--head-width) var(--lane-width);
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.head {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px 10px 16px;
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+}
+
+.headTop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-right: 2px;
+  border-radius: 3px;
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.error {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--danger);
+}
+
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.volume input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 20px;
+  margin: 0;
+}
+
+.db {
+  width: 58px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.toggle:hover {
+  background: var(--surface-3);
+}
+
+.toggle[aria-pressed="true"].solo {
+  border-color: var(--warning);
+  background: var(--warning);
+  color: var(--warning-text);
+}
+
+.toggle[aria-pressed="true"].mute {
+  border-color: var(--text-2);
+  background: var(--text-2);
+  color: var(--text-inverse);
+}
+
+.holdButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text-1);
+  font-size: 13px;
+  touch-action: none;
+}
+
+.holdButton[aria-pressed="true"] {
+  border-color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.smallButton {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.smallButton:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+
+.lane {
+  position: relative;
+  overflow: hidden;
+  background: var(--lane);
+  cursor: text;
+}
+
+.laneDim {
+  opacity: 0.55;
+}
+
+.laneStatus {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+  pointer-events: none;
+}
+
+.progressFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--accent-softer);
+  border-right: 2px solid var(--accent-strong);
+  transition: width 0.4s;
+  pointer-events: none;
+}
+
+.failedTint {
+  position: absolute;
+  inset: 0;
+  background: var(--danger-soft);
+  pointer-events: none;
+}
+
+.rulerHead {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.ruler {
+  position: relative;
+  height: 36px;
+  overflow: hidden;
+  background: var(--surface-1);
+  cursor: text;
+}
+
+.tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 10px 0 0 6px;
+  border-left: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.regionChip {
+  position: absolute;
+  top: 6px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 2px 0 6px;
+  overflow: hidden;
+  border-radius: var(--radius-s);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-1);
+  cursor: default;
+}
+
+.chipIn {
+  border: 1px solid var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 55%, var(--surface-1));
+}
+
+.chipOut {
+  border: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 45%, var(--surface-1));
+}
+
+.chipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+.chipRemove:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.region {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--region-in);
+  border-left: 1px solid var(--region-in-edge);
+  border-right: 1px solid var(--region-in-edge);
+  pointer-events: none;
+}
+
+.regionOut {
+  background: repeating-linear-gradient(135deg, var(--region-out-stripe) 0 6px, transparent 6px 12px);
+  border-color: var(--region-out-edge);
+}
+
+.draft {
+  border-style: dashed;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--playhead);
+  pointer-events: none;
+}
+
+.addRow {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--surface-2);
+}
+
+.addHint {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+  background: var(--lane);
+}
+
+.dashed {
+  border-style: dashed;
+}

@@ -18,7 +18,7 @@ CONSTRAINTS="$ROOT/backend/constraints.txt"
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║           AudioGhost AI - One-Click Installer               ║"
-echo "║                  v1.1 (macOS / Linux)                        ║"
+echo "║                  v1.2 (macOS / Linux)                        ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 

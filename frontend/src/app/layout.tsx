@@ -1,28 +1,27 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-space-grotesk" });
 
 export const metadata: Metadata = {
-  title: "AudioGhost AI - AI-Powered Audio Separation",
-  description: "Separate any sound from audio using natural language. Remove vocals, extract instruments, eliminate background noise with state-of-the-art AI.",
-  keywords: ["audio separation", "AI", "vocal removal", "stem separation", "audio editing"],
+  title: "AudioGhost AI - Pull any sound out of audio or video",
+  description:
+    "Describe the sounds you want (vocals, a dog barking, traffic) and AudioGhost separates each onto its own track, on your own GPU. Mix them and export what you hear.",
+  keywords: ["audio separation", "stem separation", "vocal removal", "SAM-Audio", "AI"],
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+// Applies the saved theme before the first paint (no flash of the wrong theme).
+const themeScript = `try{var t=localStorage.getItem("audioghost.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} antialiased`}>
-        {children}
-      </body>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${spaceGrotesk.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
+      <body>{children}</body>
     </html>
   );
 }

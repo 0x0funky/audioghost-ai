@@ -1,78 +1,149 @@
+import type {
+  Anchor,
+  AuthStatus,
+  ExportFormat,
+  Peaks,
+  SeparationSettings,
+  Session,
+  SessionSummary,
+  SystemStatus,
+} from "./types";
+
 // Central place for backend URLs. Override with NEXT_PUBLIC_API_BASE if the
 // API runs somewhere other than http://localhost:8000.
 export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000").replace(/\/$/, "");
 
-export const apiUrl = (path: string) => `${API_BASE}${path}`;
+export const apiUrl = (path: string) => (path.startsWith("http") ? path : `${API_BASE}${path}`);
 
-export type DownloadFormat = "wav" | "flac" | "mp3";
-export type StemId = "original" | "ghost" | "clean";
-
-export const DOWNLOAD_FORMATS: { value: DownloadFormat; label: string; hint: string }[] = [
-    { value: "wav", label: "WAV", hint: "24-bit, lossless" },
-    { value: "flac", label: "FLAC", hint: "lossless, smaller" },
-    { value: "mp3", label: "MP3", hint: "320 kbps" },
-];
-
-/** Working file streamed to the in-app players. */
-export const stemUrl = (taskId: string, stem: StemId | "video") =>
-    apiUrl(`/api/tasks/${taskId}/download/${stem}`);
-
-/** Attachment with a readable name, e.g. "song [vocals].wav". */
-export const stemDownloadUrl = (taskId: string, stem: StemId, format: DownloadFormat) =>
-    `${stemUrl(taskId, stem)}?format=${format}`;
-
-export const downloadAllUrl = (taskId: string, format: DownloadFormat) =>
-    apiUrl(`/api/tasks/${taskId}/download-all?format=${format}`);
-
-export const videoWithAudioUrl = (taskId: string, stem: StemId) =>
-    apiUrl(`/api/tasks/${taskId}/download-video-with-audio/${stem}`);
-
-/** Start a download; the server's Content-Disposition decides the file name. */
-export function triggerDownload(url: string) {
-    const link = document.createElement("a");
-    link.href = url;
-    link.rel = "noopener";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
 }
 
-export const QUALITY_LABELS: Record<string, string> = {
-    fast: "Fast",
-    balanced: "Balanced",
-    high: "High",
+async function errorFrom(res: Response): Promise<ApiError> {
+  let message = `${res.status} ${res.statusText}`;
+  try {
+    const body = await res.json();
+    if (typeof body.detail === "string") message = body.detail;
+    else if (Array.isArray(body.detail) && body.detail[0]?.msg) message = body.detail[0].msg;
+  } catch {
+    // not JSON
+  }
+  return new ApiError(message, res.status);
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), init);
+  } catch {
+    throw new ApiError("Can't reach the AudioGhost backend on port 8000. Is start.bat (or start.sh) running?", 0);
+  }
+  if (!res.ok) throw await errorFrom(res);
+  return res.json() as Promise<T>;
+}
+
+const json = (method: string, body: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export interface SeparateRequest extends SeparationSettings {
+  prompts: { text: string; anchors: Anchor[] }[];
+}
+
+export interface ExportRequest {
+  kind: "mix" | "tracks" | "video";
+  format: ExportFormat;
+  gains: Record<string, number>;
+  tracks: string[];
+}
+
+export const api = {
+  async system(): Promise<SystemStatus> {
+    try {
+      const data = await request<Omit<SystemStatus, "reachable">>("/api/system/status");
+      return { ...data, reachable: true };
+    } catch {
+      return { reachable: false, redis: false, worker: false, worker_starting: false, busy: false, device: null };
+    }
+  },
+  auth: () => request<AuthStatus>("/api/auth/status"),
+  login: (token: string) =>
+    request<{ success: boolean; username: string }>("/api/auth/login", json("POST", { token })),
+  sessions: () => request<{ sessions: SessionSummary[] }>("/api/sessions"),
+  session: (id: string) => request<Session>(`/api/sessions/${id}`),
+  deleteSession: (id: string) => request<{ deleted: string }>(`/api/sessions/${id}`, { method: "DELETE" }),
+  separate: (id: string, body: SeparateRequest) =>
+    request<{ job_id: string; track_ids: string[]; session: Session }>(`/api/sessions/${id}/separate`, json("POST", body)),
+  removeTrack: (id: string, trackId: string) =>
+    request<{ removed?: string; cancelling?: string }>(`/api/sessions/${id}/tracks/${trackId}`, { method: "DELETE" }),
+  peaks: (url: string) => request<Peaks>(url),
 };
 
-/** localStorage helpers that never throw (private mode, blocked storage...). */
-export function loadPref<T>(key: string, fallback: T): T {
-    try {
-        const raw = window.localStorage.getItem(`audioghost:${key}`);
-        return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
-    } catch {
-        return fallback;
-    }
+/** Upload with progress (fetch can't report upload progress). */
+export function uploadSession(
+  file: File,
+  onProgress: (fraction: number) => void,
+): { promise: Promise<Session>; abort: () => void } {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise<Session>((resolve, reject) => {
+    xhr.open("POST", apiUrl("/api/sessions"));
+    xhr.responseType = "json";
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response as Session);
+      else {
+        const detail = (xhr.response as { detail?: unknown } | null)?.detail;
+        reject(new ApiError(typeof detail === "string" ? detail : `Upload failed (${xhr.status})`, xhr.status));
+      }
+    };
+    xhr.onerror = () =>
+      reject(new ApiError("Can't reach the AudioGhost backend on port 8000. Is start.bat (or start.sh) running?", 0));
+    xhr.onabort = () => reject(new ApiError("Upload cancelled", -1));
+    const form = new FormData();
+    form.append("file", file);
+    xhr.send(form);
+  });
+  return { promise, abort: () => xhr.abort() };
 }
 
-export function savePref(key: string, value: unknown) {
+function filenameFrom(disposition: string | null, fallback: string): string {
+  if (!disposition) return fallback;
+  const star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(disposition);
+  if (star) {
     try {
-        window.localStorage.setItem(`audioghost:${key}`, JSON.stringify(value));
+      return decodeURIComponent(star[1].trim());
     } catch {
-        /* ignore */
+      // fall through
     }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/.exec(disposition);
+  return plain ? plain[1].trim() : fallback;
 }
 
-export function loadString(key: string, fallback: string): string {
-    try {
-        return window.localStorage.getItem(`audioghost:${key}`) || fallback;
-    } catch {
-        return fallback;
-    }
-}
-
-export function saveString(key: string, value: string) {
-    try {
-        window.localStorage.setItem(`audioghost:${key}`, value);
-    } catch {
-        /* ignore */
-    }
+/** POST an export and save the file under the server's name. */
+export async function downloadExport(sessionId: string, body: ExportRequest): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(`/api/sessions/${sessionId}/export`), json("POST", body));
+  } catch {
+    throw new ApiError("Can't reach the AudioGhost backend on port 8000.", 0);
+  }
+  if (!res.ok) throw await errorFrom(res);
+  const blob = await res.blob();
+  const name = filenameFrom(res.headers.get("Content-Disposition"), `audioghost-export.${body.format}`);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  return name;
 }

@@ -6,7 +6,7 @@
 
 Describe the sound you want to extract or remove using natural language. Powered by Meta's [SAM-Audio](https://github.com/facebookresearch/sam-audio) model, running locally on your own GPU.
 
-![Version](https://img.shields.io/badge/version-1.1-green) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
+![Version](https://img.shields.io/badge/version-1.2-green) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ## 🆕 What's new in v1.1
 
