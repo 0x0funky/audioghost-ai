@@ -600,7 +600,7 @@ def empty_device_cache() -> None:
 @dataclass
 class SeparationOutput:
     target: torch.Tensor  # [channels, samples] float32, CPU
-    residual: torch.Tensor  # [channels, samples] float32, CPU
+    residual: Optional[torch.Tensor]  # [channels, samples]; None if not decoded
     sample_rate: int
     chunks: int
     batch_size: int
@@ -632,7 +632,8 @@ def separate_batch(
     should_cancel: Optional[Callable[[], bool]] = None,
     state_dtype: torch.dtype = torch.float32,
     decode_batch: int = 2,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    decode_residual: bool = True,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """
     Separate ``B`` equal-length mono clips.
 
@@ -643,9 +644,12 @@ def separate_batch(
         steps: midpoint steps (2 transformer evaluations each).
         anchors: optional per-clip anchors in clip-local seconds.
         state_dtype: dtype the ODE state is integrated in (fp32 by default).
+        decode_residual: also decode the model's residual (half the decode
+            work is skipped when the caller derives "everything else" itself).
 
     Returns:
-        ``(target, residual)``, each ``[B, samples]`` float32 on CPU.
+        ``(target, residual)``, each ``[B, samples]`` float32 on CPU;
+        ``residual`` is None when ``decode_residual`` is False.
     """
     model = lite.model
     device = lite.device
@@ -699,14 +703,20 @@ def separate_batch(
         if on_step is not None:
             on_step()
 
-    generated = x.transpose(1, 2)  # [B, 2C, T]
+    generated = x.transpose(1, 2)  # [B, 2C, T]: target channels, then residual
     channels = generated.shape[1] // 2
-    latents = generated.reshape(2 * batch_size, channels, -1).to(lite.codec_dtype)
+    if decode_residual:
+        latents = generated.reshape(2 * batch_size, channels, -1)
+    else:
+        latents = generated[:, :channels]
+    latents = latents.to(lite.codec_dtype)
     decoded = []
     for i in range(0, latents.shape[0], max(1, decode_batch)):
         wav = codec_decode(lite, latents[i:i + decode_batch])
         decoded.append(wav[..., :num_samples].float().cpu())
         del wav
+    if not decode_residual:
+        return torch.cat(decoded, dim=0).view(batch_size, -1).contiguous(), None
     wavs = torch.cat(decoded, dim=0).view(batch_size, 2, -1)
     return wavs[:, 0].contiguous(), wavs[:, 1].contiguous()
 
@@ -851,11 +861,13 @@ def separate(
     seed: Optional[int] = None,
     progress: Optional[Callable[[float, str], None]] = None,
     should_cancel: Optional[Callable[[], bool]] = None,
+    decode_residual: bool = True,
 ) -> SeparationOutput:
     """
     Separate ``description`` from ``audio`` (``[channels, samples]`` at
     ``lite.sample_rate``). Multi-channel input is processed per channel with a
-    shared noise sequence, so stereo stays phase-coherent.
+    shared noise sequence, so stereo stays phase-coherent. With
+    ``decode_residual=False`` only the target is decoded (``residual`` is None).
     """
     if audio.dim() == 1:
         audio = audio.unsqueeze(0)
@@ -930,6 +942,7 @@ def separate(
                 on_step=on_step,
                 should_cancel=should_cancel,
                 decode_batch=decode_batch,
+                decode_residual=decode_residual,
             )
         except Exception as err:  # noqa: BLE001 - re-raised below
             if not _is_oom(err):
@@ -950,7 +963,7 @@ def separate(
             continue
 
         for j, key in enumerate(group):
-            results[key] = (target[j], residual[j])
+            results[key] = (target[j], None if residual is None else residual[j])
         index += len(group)
 
     def assemble(which: int) -> torch.Tensor:
@@ -964,7 +977,7 @@ def separate(
         progress(1.0, "Blending chunks")
     return SeparationOutput(
         target=assemble(0),
-        residual=assemble(1),
+        residual=assemble(1) if decode_residual else None,
         sample_rate=sr,
         chunks=plan.num_chunks,
         batch_size=batch,

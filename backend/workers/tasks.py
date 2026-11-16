@@ -75,6 +75,36 @@ _heartbeat_stop = threading.Event()
 _worker_state = {"value": "starting"}
 
 
+def _worker_info() -> dict:
+    """Device, memory and loaded model for the UI (only once torch is imported)."""
+    import sys
+
+    torch = sys.modules.get("torch")
+    sam_lite = sys.modules.get("workers.sam_lite")
+    if _worker_state["value"] != "ready" or torch is None or sam_lite is None:
+        return {}
+    info = {}
+    with _MODEL_LOCK:
+        loaded = [key[0] for key in _MODEL_CACHE]
+    if loaded:
+        info["model"] = loaded[0].split("/")[-1].replace("sam-audio-", "")
+    try:
+        device = sam_lite.resolve_device()
+        if device.type == "cuda":
+            free, total = torch.cuda.mem_get_info(device)
+            info.update(
+                device="cuda",
+                gpu=torch.cuda.get_device_name(device),
+                vram_total_gb=round(total / 1024**3, 1),
+                vram_used_gb=round((total - free) / 1024**3, 1),
+            )
+        else:
+            info.update(device=device.type, gpu="Apple GPU" if device.type == "mps" else "CPU")
+    except Exception as err:  # noqa: BLE001 - informational only
+        logger.debug("device info unavailable: %s", err)
+    return info
+
+
 def _heartbeat_loop() -> None:
     """
     Tell the API this worker is alive. A ``--pool=solo`` worker can't answer
@@ -82,7 +112,7 @@ def _heartbeat_loop() -> None:
     enough to miss them too; this thread keeps a Redis key fresh instead.
     """
     while True:
-        queue_state.worker_heartbeat(_worker_state["value"])
+        queue_state.worker_heartbeat(_worker_state["value"], _worker_info())
         if _heartbeat_stop.wait(_HEARTBEAT_INTERVAL_SECONDS):
             return
 
@@ -119,7 +149,7 @@ def _warm_up(**_kwargs):
 
             logger.info("Warm-up: SAM-Audio libraries imported")
             _worker_state["value"] = "ready"
-            queue_state.worker_heartbeat("ready")
+            queue_state.worker_heartbeat("ready", _worker_info())
             preload = os.environ.get("AUDIOGHOST_PRELOAD_MODEL", "").strip().lower()
             token = read_hf_token()
             if preload in sam_lite.MODEL_SIZES and token:
@@ -286,6 +316,137 @@ def separate_audio_task(
         queue_state.mark_finished(task_id)
         gc.collect()
         sam_lite.empty_device_cache()
+
+
+def _friendly_error(err: BaseException) -> str:
+    text = str(err).strip() or type(err).__name__
+    return text if len(text) <= 300 else text[:297] + "..."
+
+
+@celery_app.task(bind=True)
+def separate_session_task(self, session_id: str, track_ids: List[str], options: dict):
+    """
+    Separate the queued prompts of a session, one after another. Each finished
+    sound is saved right away (the UI can play it while the next one runs) and
+    "everything else" is recomputed. Only the targets are decoded: the rest is
+    the original minus the tracks.
+    """
+    import sessions
+    from workers import audio_io, sam_lite
+
+    job_id = self.request.id
+    queue_state.mark_started(job_id)
+    quality = options.get("quality") if options.get("quality") in QUALITY_PRESETS else "balanced"
+    steps = sam_lite.QUALITY_STEPS[quality]
+    chunk = max(5.0, min(60.0, float(options.get("chunk_duration") or 25.0)))
+    seed = options.get("seed")
+
+    def job_cancelled() -> bool:
+        return queue_state.is_cancelled(job_id)
+
+    def safely(action, *args, **kwargs):
+        try:
+            return action(*args, **kwargs)
+        except sessions.SessionNotFound:  # deleted while we were working
+            return None
+
+    def open_tracks() -> List[str]:
+        data = safely(sessions.load, session_id)
+        if data is None:
+            return []
+        return [t["id"] for t in data["tracks"]
+                if t["id"] in track_ids and t["status"] in sessions.ACTIVE]
+
+    try:
+        token = read_hf_token()
+        if not token:
+            raise RuntimeError("Connect your Hugging Face account first: the SAM-Audio models are gated.")
+
+        last_note = {"time": 0.0}
+
+        def note(_value, message):  # model download / loading, shown on the first track
+            now = time.monotonic()
+            if now - last_note["time"] < 0.5:
+                return
+            last_note["time"] = now
+            pending = open_tracks()
+            if pending:
+                safely(sessions.set_track, session_id, pending[0], message=message)
+            queue_state.touch_running(job_id)
+
+        lite = _get_model(
+            options.get("model_size", "base"), options.get("variant", "default"),
+            bool(options.get("use_float32")), token, note,
+        )
+        data = sessions.load(session_id)
+        source = sessions.session_dir(session_id) / data["source"]["file"]
+        stereo = bool(options.get("stereo")) and data["source"]["channels"] > 1
+        audio = audio_io.load_audio(source, lite.sample_rate, stereo=stereo)
+
+        for tid in track_ids:
+            if job_cancelled():
+                break
+            data = safely(sessions.load, session_id)
+            track = sessions.find_track(data, tid) if data else None
+            if track is None or track["status"] != "queued":
+                continue
+            safely(sessions.set_track, session_id, tid, status="running", progress=0.0, message="Starting")
+            started = time.perf_counter()
+            last = {"time": 0.0}
+
+            def progress(fraction, message, tid=tid, last=last):
+                now = time.monotonic()
+                if now - last["time"] < 0.5 and fraction < 1.0:
+                    return
+                last["time"] = now
+                safely(sessions.set_track, session_id, tid, progress=round(fraction, 3), message=message)
+                queue_state.touch_running(job_id)
+
+            def should_cancel(tid=tid) -> bool:
+                return job_cancelled() or queue_state.is_cancelled(f"{job_id}:{tid}")
+
+            try:
+                result = sam_lite.separate(
+                    lite,
+                    audio,
+                    track["prompt"],
+                    chunk_seconds=chunk,
+                    steps=steps,
+                    anchors=sam_lite.normalize_anchors(track.get("anchors")),
+                    seed=seed,
+                    progress=progress,
+                    should_cancel=should_cancel,
+                    decode_residual=False,
+                )
+            except sam_lite.SeparationCancelled:
+                safely(sessions.drop_track, session_id, tid)
+                continue
+            except Exception as err:  # noqa: BLE001 - one bad prompt shouldn't stop the rest
+                logger.exception("Session %s, track %s failed", session_id, tid)
+                safely(sessions.set_track, session_id, tid, status="failed", message="",
+                       error=_friendly_error(err), finished_at=time.time())
+                continue
+            elapsed = time.perf_counter() - started
+            safely(sessions.finish_track, session_id, tid, result.target, lite.sample_rate, elapsed)
+            logger.info("Session %s: %r done in %.1fs", session_id, track["prompt"], elapsed)
+
+    except Exception as err:  # noqa: BLE001 - setup failed: report it on every open track
+        logger.exception("Session job %s failed", job_id)
+        message = _friendly_error(err)
+        for tid in open_tracks():
+            safely(sessions.set_track, session_id, tid, status="failed", message="",
+                   error=message, finished_at=time.time())
+    finally:
+        for tid in open_tracks():  # cancelled before they started
+            safely(sessions.drop_track, session_id, tid)
+        queue_state.mark_finished(job_id)
+        gc.collect()
+        try:
+            from workers import sam_lite
+
+            sam_lite.empty_device_cache()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 @celery_app.task(bind=True)
