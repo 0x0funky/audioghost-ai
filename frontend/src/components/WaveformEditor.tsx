@@ -213,6 +213,8 @@ export default function WaveformEditor({
                 {/* Playback Controls */}
                 <div className="flex items-center gap-2">
                     <button
+                        type="button"
+                        aria-label={isPlaying ? "Pause" : "Play"}
                         onClick={togglePlayPause}
                         className="w-12 h-12 rounded-xl flex items-center justify-center transition-all hover:scale-105"
                         style={{
@@ -227,6 +229,8 @@ export default function WaveformEditor({
                     </button>
 
                     <button
+                        type="button"
+                        aria-label="Restart from the beginning"
                         onClick={restart}
                         className="w-10 h-10 rounded-lg flex items-center justify-center transition-all hover:scale-105"
                         style={{ background: "var(--bg-tertiary)", color: "var(--text-secondary)" }}
@@ -242,6 +246,8 @@ export default function WaveformEditor({
                 {/* Region Controls */}
                 <div className="flex items-center gap-2">
                     <button
+                        type="button"
+                        aria-label="Select a 5 second region at the playhead for Temporal Lock"
                         onClick={createRegion}
                         className="btn-secondary flex items-center gap-2 text-sm"
                     >
@@ -251,6 +257,8 @@ export default function WaveformEditor({
 
                     {selectedRegion && (
                         <button
+                            type="button"
+                            aria-label="Clear the selected region"
                             onClick={clearRegion}
                             className="p-2 rounded-lg transition-all"
                             style={{ background: "var(--bg-tertiary)", color: "var(--ghost-error)" }}
@@ -263,7 +271,7 @@ export default function WaveformEditor({
 
             {/* Instructions */}
             <p className="mt-4 text-sm" style={{ color: "var(--text-muted)" }}>
-                💡 Tip: Select a region to apply <strong>Temporal Lock</strong> - the AI will focus on that specific time range.
+                💡 Tip: Mark a region where the sound is clearly audible to turn on <strong>Temporal Lock</strong> - the model uses it as a hint to find the right sound. The whole file is still processed.
             </p>
         </div>
     );

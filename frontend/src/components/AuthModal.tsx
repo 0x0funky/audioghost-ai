@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X, Key, ExternalLink, Loader2, CheckCircle } from "lucide-react";
+import { apiUrl } from "@/lib/api";
 
 interface AuthModalProps {
     onClose: () => void;
@@ -20,7 +21,7 @@ export default function AuthModal({ onClose, onSuccess }: AuthModalProps) {
         setError("");
 
         try {
-            const res = await fetch("http://localhost:8000/api/auth/login", {
+            const res = await fetch(apiUrl("/api/auth/login"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ token }),
