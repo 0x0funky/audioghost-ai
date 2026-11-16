@@ -240,12 +240,12 @@ export function Workspace({
     addRegion({ promptKey: activeKey, kind: tool, start, end: Math.min(source.duration, start + 5) });
   };
 
-  const separate = async (typed?: string) => {
+  const separate = async (typed?: string): Promise<boolean> => {
     const prompts = [...pending];
     if (typed && !prompts.some((p) => p.text.toLowerCase() === typed.toLowerCase())) {
       prompts.push({ key: uid("p"), text: typed });
     }
-    if (!prompts.length) return;
+    if (!prompts.length) return false;
     setSubmitting(true);
     try {
       const res = await api.separate(session.id, {
@@ -265,8 +265,10 @@ export function Workspace({
       setPending([]);
       setRegions([]);
       setActiveKey(null);
+      return true;
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setSubmitting(false);
     }

@@ -59,8 +59,8 @@ export function SeparatePanel({
   onRemovePrompt: (key: string) => void;
   onActivate: (key: string) => void;
   onRemoveTrack: (track: Track) => void;
-  /** ``typed``: text still in the input (not added with Enter yet). */
-  onSeparate: (typed?: string) => void;
+  /** ``typed``: text still in the input (not added with Enter yet). Resolves true once queued. */
+  onSeparate: (typed?: string) => Promise<boolean>;
   submitting: boolean;
   blocker: string | null;
   needsAuth: boolean;
@@ -110,9 +110,9 @@ export function SeparatePanel({
       : queued === 1
         ? `Separate ${pending[0]?.text ?? typed}`
         : `Separate ${queued} sounds`;
-  const separate = () => {
-    setText("");
-    onSeparate(typed || undefined);
+  const separate = async () => {
+    // Keep the typed text if the request fails, so it needn't be typed again.
+    if (await onSeparate(typed || undefined)) setText("");
   };
   const visibleTracks = session.tracks;
 

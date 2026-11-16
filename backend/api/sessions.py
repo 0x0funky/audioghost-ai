@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 import sessions
 from api.separate import _is_video, _save_upload
-from settings import read_hf_token
+from settings import RETENTION_HOURS, read_hf_token
 from workers import queue_state
 
 router = APIRouter()
@@ -105,6 +105,10 @@ def present(data: dict) -> dict:
     }
 
 
+# Handlers that touch files or Redis are plain functions: FastAPI runs them in
+# its thread pool, so a slow disk never stalls the polls and audio streams.
+
+
 @router.post("", status_code=201)
 async def create_session(file: UploadFile = File(...)):
     upload = await _save_upload(file, uuid.uuid4().hex)
@@ -115,29 +119,30 @@ async def create_session(file: UploadFile = File(...)):
     except Exception as err:  # noqa: BLE001 - undecodable files land here
         upload.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"Could not read the audio in this file: {err}") from None
+    await run_in_threadpool(sessions.cleanup_if_due, RETENTION_HOURS)
     return present(data)
 
 
 @router.get("")
-async def list_sessions(limit: int = 30):
-    return {"sessions": await run_in_threadpool(sessions.list_sessions, max(1, min(limit, 200)))}
+def list_sessions(limit: int = 30):
+    sessions.cleanup_if_due(RETENTION_HOURS)
+    return {"sessions": sessions.list_sessions(max(1, min(limit, 200)))}
 
 
 @router.get("/{sid}")
-async def get_session(sid: str):
-    data = await run_in_threadpool(_load, sid)
-    return await run_in_threadpool(present, data)
+def get_session(sid: str):
+    return present(_load(sid))
 
 
 @router.delete("/{sid}")
-async def delete_session(sid: str):
+def delete_session(sid: str):
     _load(sid)
-    await run_in_threadpool(sessions.delete, sid)
+    sessions.delete(sid)
     return {"deleted": sid}
 
 
 @router.post("/{sid}/separate", status_code=202)
-async def separate(sid: str, request: SeparateRequest):
+def separate(sid: str, request: SeparateRequest):
     from workers.tasks import separate_session_task
 
     data = _load(sid)
@@ -176,25 +181,33 @@ async def separate(sid: str, request: SeparateRequest):
         "seed": request.seed,
     }
     job_id = str(uuid.uuid4())
-    track_ids = await run_in_threadpool(sessions.add_tracks, sid, prompts, options, job_id)
+    track_ids = sessions.add_tracks(sid, prompts, options, job_id)
     queue_state.enqueue(job_id)
     separate_session_task.apply_async(args=[sid, track_ids, options], task_id=job_id)
     return {"job_id": job_id, "track_ids": track_ids, "session": present(sessions.load(sid))}
 
 
+def _worker_runs(job_id: Optional[str]) -> bool:
+    """Whether a live worker is running this job right now."""
+    return bool(job_id) and queue_state.worker_state() is not None and queue_state.running_task() == job_id
+
+
 @router.delete("/{sid}/tracks/{tid}")
-async def remove_track(sid: str, tid: str):
-    """Queued: removed. Running: cancelled (the worker removes it). Finished: removed."""
+def remove_track(sid: str, tid: str):
+    """
+    Queued or finished: removed. Running: cancelled (the worker drops it), or
+    removed right away when no worker is running it any more (it stopped).
+    """
     data = _load(sid)
     track = sessions.find_track(data, tid)
     if track is None:
         raise HTTPException(status_code=404, detail="Track not found")
-    if track["status"] == "running":
+    if track["status"] == "running" and _worker_runs(track.get("job_id")):
         queue_state.request_cancel(f"{track['job_id']}:{tid}")
         return {"cancelling": tid}
-    await run_in_threadpool(sessions.drop_track, sid, tid)
+    sessions.drop_track(sid, tid)
     if track["status"] == "done":
-        await run_in_threadpool(sessions.rebuild_rest, sid)
+        sessions.rebuild_rest(sid)
     return {"removed": tid}
 
 
@@ -213,16 +226,16 @@ async def get_file(sid: str, name: str):
 
 
 @router.post("/{sid}/export")
-async def export(sid: str, request: ExportRequest):
+def export(sid: str, request: ExportRequest):
     _load(sid)
     gains = {key: max(0.0, float(value)) for key, value in request.gains.items()}
     try:
         if request.kind == "mix":
-            path, name = await run_in_threadpool(sessions.export_mix, sid, gains, request.format)
+            path, name = sessions.export_mix(sid, gains, request.format)
         elif request.kind == "tracks":
-            path, name = await run_in_threadpool(sessions.export_tracks, sid, request.tracks, request.format)
+            path, name = sessions.export_tracks(sid, request.tracks, request.format)
         else:
-            path, name = await run_in_threadpool(sessions.export_video, sid, gains)
+            path, name = sessions.export_video(sid, gains)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from None
     except RuntimeError as err:  # FFmpeg missing / failed

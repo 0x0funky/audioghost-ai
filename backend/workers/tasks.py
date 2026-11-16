@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 # One model in memory at a time: (cache key, LiteModel)
 _MODEL_CACHE: dict = {}
 _MODEL_LOCK = threading.Lock()
+#: The loaded model's repo id, for the heartbeat thread: it must never wait for
+#: _MODEL_LOCK, which a model download holds for minutes.
+_LOADED_REPO = {"value": None}
 
 QUALITY_PRESETS = ("fast", "balanced", "high")
 
@@ -59,6 +62,7 @@ def _get_model(model_size: str, variant: str, use_float32: bool, token, progress
 
         for old_key in list(_MODEL_CACHE):
             logger.info("Unloading %s", old_key[0])
+            _LOADED_REPO["value"] = None
             sam_lite.unload(_MODEL_CACHE.pop(old_key))
 
         sam_lite.ensure_downloaded(
@@ -67,6 +71,7 @@ def _get_model(model_size: str, variant: str, use_float32: bool, token, progress
         progress(26, f"Loading {repo_id.split('/')[-1]} ({precision})...")
         lite = sam_lite.load_lite_model(repo_id, device=device, precision=precision, token=token)
         _MODEL_CACHE[key] = lite
+        _LOADED_REPO["value"] = repo_id
         return lite
 
 
@@ -84,10 +89,9 @@ def _worker_info() -> dict:
     if _worker_state["value"] != "ready" or torch is None or sam_lite is None:
         return {}
     info = {}
-    with _MODEL_LOCK:
-        loaded = [key[0] for key in _MODEL_CACHE]
-    if loaded:
-        info["model"] = loaded[0].split("/")[-1].replace("sam-audio-", "")
+    repo = _LOADED_REPO["value"]
+    if repo:
+        info["model"] = repo.split("/")[-1].replace("sam-audio-", "")
     try:
         device = sam_lite.resolve_device()
         if device.type == "cuda":
@@ -117,10 +121,30 @@ def _heartbeat_loop() -> None:
             return
 
 
+def _recover_interrupted_tracks() -> None:
+    """
+    Celery acknowledges a job when it starts, so a job that was running when
+    the worker stopped (window closed, crash, out of memory) is gone. Fail its
+    tracks instead of leaving them "running" forever. Runs before the worker
+    takes its first job.
+    """
+    try:
+        import sessions
+
+        dead = {job for job in [queue_state.running_task()] if job}
+        queue_state.clear_running()
+        failed = sessions.recover_interrupted(dead)
+        if failed:
+            logger.warning("Marked %d interrupted track(s) as failed", failed)
+    except Exception as err:  # noqa: BLE001 - best effort
+        logger.warning("Could not check for interrupted tracks: %s", err)
+
+
 @worker_init.connect
 def _start_heartbeat(**_kwargs):
     # As early as possible: the worker needs ~20 s more to connect and warm up,
     # and the UI should say "starting" rather than "not running" meanwhile.
+    _recover_interrupted_tracks()
     _heartbeat_stop.clear()
     threading.Thread(target=_heartbeat_loop, name="audioghost-heartbeat", daemon=True).start()
 
@@ -405,7 +429,7 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
             def should_cancel(tid=tid) -> bool:
                 return job_cancelled() or queue_state.is_cancelled(f"{job_id}:{tid}")
 
-            try:
+            try:  # one bad prompt (or a failed save) shouldn't stop the rest
                 result = sam_lite.separate(
                     lite,
                     audio,
@@ -418,16 +442,16 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
                     should_cancel=should_cancel,
                     decode_residual=False,
                 )
+                elapsed = time.perf_counter() - started
+                safely(sessions.finish_track, session_id, tid, result.target, lite.sample_rate, elapsed)
             except sam_lite.SeparationCancelled:
                 safely(sessions.drop_track, session_id, tid)
                 continue
-            except Exception as err:  # noqa: BLE001 - one bad prompt shouldn't stop the rest
+            except Exception as err:  # noqa: BLE001
                 logger.exception("Session %s, track %s failed", session_id, tid)
                 safely(sessions.set_track, session_id, tid, status="failed", message="",
                        error=_friendly_error(err), finished_at=time.time())
                 continue
-            elapsed = time.perf_counter() - started
-            safely(sessions.finish_track, session_id, tid, result.target, lite.sample_rate, elapsed)
             logger.info("Session %s: %r done in %.1fs", session_id, track["prompt"], elapsed)
 
     except Exception as err:  # noqa: BLE001 - setup failed: report it on every open track

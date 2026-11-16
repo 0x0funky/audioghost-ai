@@ -35,6 +35,8 @@ export class MultiTrackPlayer {
   private raf = 0;
   private lastEmit = 0;
   private loop = false;
+  /** Last gains set, so a source added later (a new "everything else") starts at its level. */
+  private gains: Record<string, number> = {};
 
   constructor(duration: number) {
     this.duration = duration;
@@ -81,8 +83,9 @@ export class MultiTrackPlayer {
     const el = new Audio();
     el.crossOrigin = "anonymous";
     el.preload = "auto";
-    const channel: Channel = { key, url, el, node: null, gain: null, target: 0 };
-    el.volume = 0;
+    const target = Math.max(0, this.gains[key] ?? 0);
+    const channel: Channel = { key, url, el, node: null, gain: null, target };
+    el.volume = Math.min(1, target);
     el.src = url;
     this.channels.set(key, channel);
     el.addEventListener(
@@ -120,6 +123,7 @@ export class MultiTrackPlayer {
 
   /** Linear gain per source key; sources not listed are silent. */
   setGains(gains: Record<string, number>) {
+    this.gains = { ...gains };
     for (const channel of this.channels.values()) {
       channel.target = Math.max(0, gains[channel.key] ?? 0);
       if (channel.gain && this.ctx) {

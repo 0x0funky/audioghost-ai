@@ -46,6 +46,10 @@ SCHEMA_VERSION = 1
 BLOCK_FRAMES = 10 * SAMPLE_RATE
 MAX_GAIN = 4.0  # +12 dB
 ACTIVE = ("queued", "running")
+#: A rebuild of "everything else" for an hours-long file can take minutes.
+REST_LOCK_SECONDS = 1800
+CLEANUP_EVERY_SECONDS = 600
+INTERRUPTED = "Interrupted: the worker stopped before this sound was finished. Try again."
 
 _SESSION_ID = re.compile(r"^[0-9a-f]{16}$")
 _TRACK_ID = re.compile(r"^t[0-9a-f]{8}$")
@@ -322,7 +326,12 @@ def delete(sid: str) -> None:
 
 
 def cleanup(max_age_hours: float) -> int:
-    """Delete sessions untouched for ``max_age_hours`` (and broken leftovers)."""
+    """
+    Delete sessions untouched for ``max_age_hours`` (and broken leftovers).
+    A running job updates its session every second or so, so a session this
+    old with a track still queued or running was left behind by a worker that
+    stopped: it goes too.
+    """
     if max_age_hours <= 0 or not SESSION_DIR.exists():
         return 0
     cutoff = time.time() - max_age_hours * 3600
@@ -332,9 +341,7 @@ def cleanup(max_age_hours: float) -> int:
             continue
         try:
             data = load(folder.name)
-            stale = data["updated_at"] < cutoff and not any(
-                t["status"] in ACTIVE for t in data["tracks"]
-            )
+            stale = data["updated_at"] < cutoff
         except SessionNotFound:
             stale = folder.stat().st_mtime < cutoff
         except Exception:  # noqa: BLE001
@@ -343,6 +350,59 @@ def cleanup(max_age_hours: float) -> int:
             shutil.rmtree(folder, ignore_errors=True)
             removed += 1
     return removed
+
+
+_last_cleanup = {"time": None}
+
+
+def cleanup_if_due(max_age_hours: float) -> int:
+    """``cleanup``, at most every 10 minutes (the API calls this on uploads and listings)."""
+    now = time.monotonic()
+    last = _last_cleanup["time"]
+    if last is not None and now - last < CLEANUP_EVERY_SECONDS:
+        return 0
+    _last_cleanup["time"] = now
+    return cleanup(max_age_hours)
+
+
+def recover_interrupted(dead_jobs: Iterable[str] = ()) -> int:
+    """
+    Fail the tracks of jobs that can no longer finish: every track of a job
+    that was running when the worker stopped. Celery acknowledges a job when it
+    starts, so a restarted worker never resumes it, and its tracks would stay
+    "running" forever. ``dead_jobs``: jobs known to have been running. Called
+    when the worker starts; returns how many tracks were failed.
+    """
+    if not SESSION_DIR.exists():
+        return 0
+    failed = 0
+    for folder in SESSION_DIR.iterdir():
+        if not (folder.is_dir() and _SESSION_ID.match(folder.name)):
+            continue
+        try:
+            data = load(folder.name)
+        except Exception:  # noqa: BLE001
+            continue
+        jobs = set(dead_jobs) | {t.get("job_id") for t in data["tracks"] if t["status"] == "running"}
+        jobs.discard(None)
+        if not any(t["status"] in ACTIVE and t.get("job_id") in jobs for t in data["tracks"]):
+            continue
+        count = {"n": 0}
+
+        def change(d, jobs=jobs, count=count):
+            now = time.time()
+            for track in d["tracks"]:
+                if track["status"] in ACTIVE and track.get("job_id") in jobs:
+                    track.update(status="failed", message="", error=INTERRUPTED, finished_at=now)
+                    count["n"] += 1
+
+        try:
+            update(folder.name, change)
+        except Exception as err:  # noqa: BLE001
+            logger.warning("Could not update session %s: %s", folder.name, err)
+            continue
+        failed += count["n"]
+    return failed
 
 
 # --------------------------------------------------------------------------- #
@@ -392,15 +452,54 @@ def set_track(sid: str, tid: str, **fields) -> Optional[dict]:
 
 
 def drop_track(sid: str, tid: str) -> None:
-    """Remove a track entry and its files (the caller rebuilds "everything else")."""
+    """
+    Remove a track entry and its files (the caller rebuilds "everything else").
+    Holds the rest lock, so a rebuild never sees a track's file vanish halfway.
+    """
     folder = session_dir(sid)
 
     def change(data):
         data["tracks"] = [t for t in data["tracks"] if t["id"] != tid]
 
-    update(sid, change)
-    _remove(folder / f"{tid}.wav")
-    _remove(folder / f"{tid}.peaks.json")
+    with queue_state.redis_lock(f"rest:{sid}", timeout=REST_LOCK_SECONDS):
+        update(sid, change)
+        _remove(folder / f"{tid}.wav")
+        _remove(folder / f"{tid}.peaks.json")
+
+
+def _match_stereo_image(original: Path, wav):
+    """
+    A sound separated from the mono downmix of a stereo file comes out mono.
+    Give it the left/right balance it has in the original: a least-squares gain
+    per channel, scaled so the two average 1 (the mono sum stays exactly what
+    the model produced). Otherwise "everything else" would keep half of a sound
+    panned to one side, plus an inverted copy on the other side. Centred sounds
+    stay mono.
+    """
+    import torch
+
+    sf = _sf()
+    mono = wav[0].detach().float().cpu().numpy()
+    dots = np.zeros(2)
+    energy = 0.0
+    with sf.SoundFile(str(original)) as f:
+        position = 0
+        while position < len(mono):
+            n = min(BLOCK_FRAMES, len(mono) - position)
+            block = _read_block(f, n, 2).astype(np.float64)
+            segment = mono[position:position + n].astype(np.float64)
+            dots += block.T @ segment
+            energy += float(segment @ segment)
+            position += n
+    if energy <= 1e-9:
+        return wav
+    gains = np.clip(dots / energy, 0.0, None)
+    if gains.sum() <= 1e-9:
+        return wav
+    gains = 2.0 * gains / gains.sum()
+    if abs(gains[0] - 1.0) < 0.05:
+        return wav
+    return torch.from_numpy(np.stack([gains[0] * mono, gains[1] * mono]).astype(np.float32))
 
 
 def finish_track(sid: str, tid: str, wav, sample_rate: int, elapsed: float) -> bool:
@@ -413,8 +512,11 @@ def finish_track(sid: str, tid: str, wav, sample_rate: int, elapsed: float) -> b
     from workers import audio_io
 
     folder = session_dir(sid)
-    if find_track(load(sid), tid) is None:
+    data = load(sid)
+    if find_track(data, tid) is None:
         return False
+    if data["source"]["channels"] == 2 and wav.shape[0] == 1:
+        wav = _match_stereo_image(folder / "original.wav", wav)
     path = folder / f"{tid}.wav"
     audio_io.save_audio(path, wav, sample_rate)
     write_peaks(path, folder / f"{tid}.peaks.json")
@@ -427,53 +529,82 @@ def finish_track(sid: str, tid: str, wav, sample_rate: int, elapsed: float) -> b
     return True
 
 
+def _rest_inputs(data: dict, finishing: Optional[tuple]) -> List[tuple]:
+    """``(track id, file)`` of every finished track, plus the one being finished."""
+    inputs = []
+    for track in data["tracks"]:
+        if finishing and track["id"] == finishing[0]:
+            inputs.append((track["id"], finishing[1]["file"]))
+        elif track["status"] == "done" and track.get("file"):
+            inputs.append((track["id"], track["file"]))
+    return inputs
+
+
 def rebuild_rest(sid: str, finishing: Optional[tuple] = None) -> bool:
     """
-    ``rest = original - sum(finished tracks)``, written under a new revision.
+    ``rest = original - sum(finished tracks)``, published under a new revision.
     ``finishing = (track id, fields)`` counts that track as finished and applies
     ``fields`` to it in the same update. Returns False if that track is gone.
+
+    Runs under the session's rest lock (track removals take it too). If the lock
+    is unavailable and the tracks change while the rest is computed, it is
+    computed again, so the published rest matches the published tracks. The
+    revision number is picked under the session lock, so two rebuilds never
+    write the same file.
     """
     folder = session_dir(sid)
-    with queue_state.redis_lock(f"rest:{sid}", timeout=120):
-        data = load(sid)
-        if finishing and find_track(data, finishing[0]) is None:
-            return False
-        done = [t for t in data["tracks"]
-                if (t["status"] == "done" and t.get("file")) or (finishing and t["id"] == finishing[0])]
-        files = {t["id"]: (finishing[1]["file"] if finishing and t["id"] == finishing[0] else t["file"])
-                 for t in done}
-        old = data.get("rest")
-        if not done:
-            new = None
-        else:
-            rev = (old or {}).get("rev", 0) + 1
-            path = folder / f"rest.{rev}.wav"
-            sources = [(folder / "original.wav", 1.0)] + [(folder / files[t["id"]], -1.0) for t in done]
-            _combine(path, sources, data["source"]["frames"], data["source"]["channels"])
-            write_peaks(path, folder / f"rest.{rev}.peaks.json")
-            new = {"rev": rev, "file": path.name, "tracks": [t["id"] for t in done]}
+    attempts = 5
+    with queue_state.redis_lock(f"rest:{sid}", timeout=REST_LOCK_SECONDS):
+        for attempt in range(attempts):
+            last = attempt == attempts - 1
+            data = load(sid)
+            if finishing and find_track(data, finishing[0]) is None:
+                return False
+            inputs = _rest_inputs(data, finishing)
+            ids = [tid for tid, _ in inputs]
+            if not last and any(not (folder / name).is_file() for _, name in inputs):
+                continue  # removed meanwhile: read the tracks again
+            build = None
+            if inputs:
+                build = folder / f"rest-build-{uuid.uuid4().hex[:8]}.wav"
+                sources = [(folder / "original.wav", 1.0)] + [(folder / name, -1.0) for _, name in inputs]
+                _combine(build, sources, data["source"]["frames"], data["source"]["channels"])
+                write_peaks(build, build.with_suffix(".peaks.json"))
+            state = {"result": "ok", "old": None, "new": None}
 
-        state = {"ok": True}
-
-        def change(d):
-            if finishing:
-                track = find_track(d, finishing[0])
-                if track is None:  # removed while the rest was being computed
-                    state["ok"] = False
+            def change(d, build=build, ids=ids, last=last):
+                if finishing and find_track(d, finishing[0]) is None:
+                    state["result"] = "gone"
                     return
-                track.update(finishing[1])
-            d["rest"] = new
+                if not last and [tid for tid, _ in _rest_inputs(d, finishing)] != ids:
+                    state["result"] = "stale"
+                    return
+                state["old"] = d.get("rest")
+                new = None
+                if build is not None:
+                    rev = (d.get("rest") or {}).get("rev", 0) + 1
+                    _replace(build, folder / f"rest.{rev}.wav")
+                    _replace(build.with_suffix(".peaks.json"), folder / f"rest.{rev}.peaks.json")
+                    new = {"rev": rev, "file": f"rest.{rev}.wav", "tracks": ids}
+                d["rest"] = new
+                state["new"] = new
+                if finishing:
+                    find_track(d, finishing[0]).update(finishing[1])
 
-        update(sid, change)
-        if not state["ok"]:
-            if new:
-                _remove(folder / new["file"])
-                _remove(folder / new["file"].replace(".wav", ".peaks.json"))
-            return False
-        if old:
-            _remove(folder / old["file"])
-            _remove(folder / old["file"].replace(".wav", ".peaks.json"))
-        return True
+            update(sid, change)
+            if state["result"] != "ok":
+                if build is not None:
+                    _remove(build)
+                    _remove(build.with_suffix(".peaks.json"))
+                if state["result"] == "gone":
+                    return False
+                continue
+            old, new = state["old"], state["new"]
+            if old and old["file"] != (new or {}).get("file"):
+                _remove(folder / old["file"])
+                _remove(folder / old["file"].replace(".wav", ".peaks.json"))
+            return True
+    return False  # not reached: the last attempt always publishes
 
 
 # --------------------------------------------------------------------------- #

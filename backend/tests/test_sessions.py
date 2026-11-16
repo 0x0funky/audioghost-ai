@@ -70,18 +70,21 @@ def test_create_decodes_and_writes_overview(store):
 
 
 def test_rest_is_original_minus_tracks_mono_track_on_stereo_source(store):
-    session, (a, b, c) = make_session(store)
+    session, (a, b, c) = make_session(store)  # left = a + b + c, right = half of that
     sid = session["id"]
     ids = sessions.add_tracks(sid, [{"text": "low tone"}, {"text": "mid tone"}], {"model_size": "small"}, "job-1")
-    finish(session, ids[0], a)
-    finish(session, ids[1], b)
+    # Mono separation sees the downmix (left + right) / 2 = 0.75 * (a + b + c).
+    finish(session, ids[0], 0.75 * a)
+    finish(session, ids[1], 0.75 * b)
     data = sessions.load(sid)
     assert [t["status"] for t in data["tracks"]] == ["done", "done"]
     assert data["rest"]["rev"] == 2
-    rest = read(sessions.session_dir(sid) / data["rest"]["file"])
-    original = read(sessions.session_dir(sid) / "original.wav")
-    expected = original - (a + b)[:, None]  # mono tracks are subtracted from both channels
-    np.testing.assert_allclose(rest, expected, atol=1e-5)
+    folder = sessions.session_dir(sid)
+    # Each track takes its sound's place in the stereo image...
+    np.testing.assert_allclose(read(folder / f"{ids[0]}.wav"), np.stack([a, 0.5 * a], axis=1), atol=1e-4)
+    # ...so muting it removes the sound from both channels.
+    rest = read(folder / data["rest"]["file"])
+    np.testing.assert_allclose(rest, np.stack([c, 0.5 * c], axis=1), atol=1e-4)
     # The old revision's files are gone.
     assert not (sessions.session_dir(sid) / "rest.1.wav").exists()
 
@@ -179,6 +182,82 @@ def test_list_and_cleanup(store):
     assert [s["id"] for s in sessions.list_sessions()] == [s2["id"]]
 
 
+def test_hard_panned_sound_leaves_no_trace_in_everything_else(store):
+    a, b = tone(220), tone(330)
+    upload = store / "panned.wav"
+    sf.write(str(upload), np.stack([a + b, b], axis=1), SR, subtype="FLOAT")  # a hard left, b centre
+    session = sessions.create(upload, "panned.wav", is_video=False)
+    sid = session["id"]
+    ids = sessions.add_tracks(sid, [{"text": "left"}, {"text": "centre"}], {}, "job-1")
+    finish(session, ids[0], 0.5 * a)  # what mono separation finds in the downmix
+    finish(session, ids[1], b)
+    folder = sessions.session_dir(sid)
+    assert read(folder / f"{ids[1]}.wav").shape[1] == 1  # centred: stays mono
+    rest = read(folder / sessions.load(sid)["rest"]["file"])
+    assert np.abs(rest).max() < 1e-4  # no half-left copy, no inverted right copy
+
+
+def test_interrupted_jobs_fail_their_tracks(store):
+    session, _ = make_session(store, channels=1)
+    sid = session["id"]
+    crashed = sessions.add_tracks(sid, [{"text": "a"}, {"text": "b"}], {}, "job-crashed")
+    waiting = sessions.add_tracks(sid, [{"text": "c"}], {}, "job-waiting")
+    sessions.set_track(sid, crashed[0], status="running", progress=0.4)
+    assert sessions.recover_interrupted() == 2
+    tracks = {t["id"]: t for t in sessions.load(sid)["tracks"]}
+    assert [tracks[t]["status"] for t in crashed] == ["failed", "failed"]
+    assert tracks[crashed[1]]["error"] == sessions.INTERRUPTED
+    assert tracks[waiting[0]]["status"] == "queued"  # its job is still in the queue
+    # A job that was loading its model (nothing running yet) is known from Redis.
+    assert sessions.recover_interrupted({"job-waiting"}) == 1
+
+
+def test_cleanup_removes_abandoned_running_sessions(store):
+    session, _ = make_session(store, channels=1)
+    sid = session["id"]
+    [tid] = sessions.add_tracks(sid, [{"text": "a"}], {}, "job-1")
+    sessions.set_track(sid, tid, status="running")
+    data = sessions.load(sid)
+    data["updated_at"] = time.time() - 48 * 3600
+    sessions._write(sid, data)
+    assert sessions.cleanup(24) == 1
+    assert sessions.list_sessions() == []
+
+
+def test_rest_is_rebuilt_when_tracks_change_meanwhile(store, monkeypatch):
+    session, (a, b, c) = make_session(store, channels=1)
+    sid = session["id"]
+    ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}], {}, "job-1")
+    finish(session, ids[0], a)
+    real_combine = sessions._combine
+    calls = []
+
+    def combine(*args, **kwargs):  # Redis down (no lock): the low track is removed mid-build
+        if not calls:
+            sessions.update(sid, lambda d: d.update(tracks=[t for t in d["tracks"] if t["id"] != ids[0]]))
+        calls.append(1)
+        return real_combine(*args, **kwargs)
+
+    monkeypatch.setattr(sessions, "_combine", combine)
+    finish(session, ids[1], b)
+    data = sessions.load(sid)
+    assert len(calls) == 2
+    assert data["rest"]["tracks"] == [ids[1]]
+    rest = read(sessions.session_dir(sid) / data["rest"]["file"])[:, 0]
+    np.testing.assert_allclose(rest, a + c, atol=1e-5)
+    leftovers = [p.name for p in sessions.session_dir(sid).iterdir() if p.name.startswith("rest-build")]
+    assert leftovers == []
+
+
+def test_cleanup_if_due_is_throttled(store, monkeypatch):
+    runs = []
+    monkeypatch.setattr(sessions, "cleanup", lambda hours: runs.append(hours) or 0)
+    monkeypatch.setattr(sessions, "_last_cleanup", {"time": None})
+    sessions.cleanup_if_due(24)
+    sessions.cleanup_if_due(24)
+    assert runs == [24]
+
+
 def test_ids_cannot_escape_the_session_folder(store):
     for bad in ("..", "../x", "0123", "ABCDEF0123456789", "0123456789abcdef/.."):
         with pytest.raises(sessions.SessionNotFound):
@@ -251,6 +330,22 @@ def test_api_upload_separate_and_remove(client):
     assert client.get("/api/sessions").json()["sessions"][0]["id"] == sid
     assert client.delete(f"/api/sessions/{sid}").status_code == 200
     assert client.get(f"/api/sessions/{sid}").status_code == 404
+
+
+def test_api_removes_a_running_track_nobody_is_running(client, monkeypatch):
+    sid = upload(client).json()["id"]
+    [tid] = sessions.add_tracks(sid, [{"text": "x"}], {}, "job-1")
+    sessions.set_track(sid, tid, status="running")
+    import api.sessions as api_sessions
+
+    # A live worker running this job: cooperative cancel.
+    monkeypatch.setattr(api_sessions.queue_state, "worker_state", lambda: "ready")
+    monkeypatch.setattr(api_sessions.queue_state, "running_task", lambda: "job-1")
+    assert client.delete(f"/api/sessions/{sid}/tracks/{tid}").json() == {"cancelling": tid}
+    # The worker stopped (no heartbeat): removed right away.
+    monkeypatch.setattr(api_sessions.queue_state, "worker_state", lambda: None)
+    assert client.delete(f"/api/sessions/{sid}/tracks/{tid}").json() == {"removed": tid}
+    assert client.get(f"/api/sessions/{sid}").json()["tracks"] == []
 
 
 def test_api_rejects_bad_requests(client):

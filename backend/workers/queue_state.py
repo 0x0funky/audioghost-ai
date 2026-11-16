@@ -149,6 +149,14 @@ def redis_lock(name: str, timeout: float = 30.0):
                 pass
 
 
+def clear_running() -> None:
+    """Forget the running job (a worker that just started is running nothing)."""
+    try:
+        _redis().delete(RUNNING_KEY)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def running_task() -> Optional[str]:
     try:
         value = _redis().get(RUNNING_KEY)
