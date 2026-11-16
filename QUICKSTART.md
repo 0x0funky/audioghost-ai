@@ -70,19 +70,20 @@ npm run dev
 
 ## 首次使用
 
-1. 點擊右上角「Connect HuggingFace」
+1. 在開始頁右側「This computer」卡片點「Connect」（或點右上角的狀態標籤）
 2. 到 https://huggingface.co/facebook/sam-audio-large 申請存取權限（若之後使用 -tv 精準模型出現 403，也到該模型頁面申請）
 3. 建立 Access Token：https://huggingface.co/settings/tokens
 4. 貼上 Token 並連線
-5. 第一次分離會自動下載模型（Small 5.1 GB / Base 7.7 GB / Large 14.9 GB），進度會顯示在畫面上
+5. 第一次分離會自動下載模型（Small 5.1 GB / Base 7.7 GB / Large 14.9 GB），進度會顯示在該軌道上
 
-## 功能使用
+## 功能使用（v1.2）
 
-- **上傳**：拖放、點擊或用鍵盤（Tab 到上傳區按 Enter）
-- **描述聲音**：快捷按鈕或自行輸入（vocals、a dog barking、crowd noise…）
-- **時間鎖定（Temporal Lock）**：在波形上選一段「目標聲音清楚出現」的區域，模型會把它當作提示（整段檔案仍會處理）
-- **速度 / 品質**：Fast（8 步，約快 2 倍）/ Balanced（16 步，Meta 預設）/ High（32 步）
-- **立體聲**：保留左右聲道（運算量約 2 倍）
-- **精準模型（-tv）**：Meta 的 -tv checkpoint，選對目標聲音的準確度更高
-- **輸出**：Isolated（目標聲音）/ Without（其他聲音），可下載 WAV / FLAC / MP3 或一次打包 ZIP
-- **取消**：處理中可隨時取消（會在下一個推論步驟停止）
+- **上傳**：拖放或點「Choose a file」。每個檔案是一個工作階段，會列在開始頁的「Recent」，重新整理頁面也不會遺失（保留 24 小時）
+- **描述聲音**：在右側面板輸入（按 Enter 加入）或點建議，例如 speech、vocals、background music、a dog barking。一次可以放好幾個，每個聲音各自一軌
+- **Everything else**：原音減掉所有軌道後剩下的聲音。全部軌道都在 0 dB 時加起來就是原音，所以把某一軌靜音就等於移除那個聲音
+- **混音器**：每軌有 S（獨奏）、M（靜音）和音量；按住「Hold to hear the original」可以對照原音；空白鍵播放／暫停
+- **時間鎖定**：先在面板點選一個新的聲音，再在時間軸上拖曳：「Sound is here」標出聲音清楚出現的地方，「Not here」標出沒有它的地方（模型當作提示，整段仍會處理）
+- **模型 / 品質**：Small / Base / Large；Fast（8 步）/ Balanced（16 步，Meta 預設）/ High（32 步）
+- **進階**：保留立體聲（運算約 2 倍）、精準模型（-tv）、完整 FP32、最長分段長度
+- **匯出**：「What you hear」輸出目前的混音；也可以把各軌打包成 ZIP，或（影片）輸出帶有混音的影片。格式：24-bit WAV / FLAC / MP3
+- **取消**：軌道上的 ✕ 可以取消處理中的軌道，或移除排隊中的軌道

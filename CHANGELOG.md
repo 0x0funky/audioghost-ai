@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.2.0 - 2026-11
+
+A new workspace: several sounds per run, each on its own track, a mixer, and exports of exactly what you hear.
+
+### New
+- **Sessions**: an upload and everything separated from it live in a session that survives page reloads and restarts (the URL carries `?session=`). Recent sessions are listed on the start screen for 24 hours.
+- **Several sounds per run**, one track each, processed one after another; finished tracks are playable while the next one runs. Cancel a running track, or remove queued and finished ones.
+- **Everything else** = the original minus every finished track, so all tracks at 0 dB add up to the original exactly (max error 1.8e-7 in an end-to-end test) and muting a track removes exactly that sound. On a mixture with known sources it matched SAM-Audio's own residual on average (SI-SDR 1.6 vs 2.8 dB for a speech prompt, 10.4 vs 6.8 dB for a music prompt), and skipping the residual decode makes each track faster.
+- **Mixer**: volume, mute and solo per track, *hold to hear the original*; every source streams through a WebAudio gain and stays in sync with the original (and the video).
+- **Exports**: what you hear as one file, single tracks as a ZIP, or the video with the mix; 24-bit WAV, FLAC or MP3; names like `song [no vocals].wav` or `song [everything else].wav`.
+- **Temporal Lock, both ways**: drag on the timeline to mark where a sound is audible or where it is not, per sound (SAM-Audio's positive and negative anchors).
+- **Start screen** with upload progress, recent sessions and a setup card (GPU, Hugging Face access, downloaded models); system status moved into a chip in the top bar.
+- **Sessions API** (`/api/sessions/...`); the v1.1 endpoints keep working.
+
+### Changed
+- The interface was rebuilt around one workspace (multi-track timeline, separate panel, mix bar) with a single design system for dark and light themes; CSS modules replace ~250 inline style blocks, and one track lane replaces the two separate mixers.
+- The worker's heartbeat now carries the GPU, its memory and the loaded model.
+- WaveSurfer and Tailwind were removed from the frontend (no longer used); Next's dev badge is hidden.
+
+### Fixed
+- WAV exports of a mix were written as 32-bit float instead of 24-bit.
+
 ## v1.1.1 - 2026-11
 
 ### Fixed

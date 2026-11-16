@@ -2,47 +2,50 @@
 
 ![AudioGhost Banner](banner.png)
 
-**AI-Powered Object-Oriented Audio Separation**
+**Pull any sound out of audio or video**
 
-Describe the sound you want to extract or remove using natural language. Powered by Meta's [SAM-Audio](https://github.com/facebookresearch/sam-audio) model, running locally on your own GPU.
+Describe the sounds you want (vocals, a dog barking, traffic) and AudioGhost puts each one on its own track. Mix the tracks and export exactly what you hear, or your video with the new soundtrack. Powered by Meta's [SAM-Audio](https://github.com/facebookresearch/sam-audio), running locally on your own GPU.
 
 ![Version](https://img.shields.io/badge/version-1.2-green) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-## 🆕 What's new in v1.1
+## 🆕 What's new in v1.2
 
 | | |
 |---|---|
-| ⚡ **~4–6× faster** | A 4:26 song with the Small model: **95 s → 17 s** on an RTX 4090 ([benchmarks](#-performance)) |
-| 🎯 **More precise** | On our test clips the new mixed precision stays within 44–57 dB SNR of a strict fp32 run (v1.0's default path: 25–32 dB) |
-| 💾 **~25 GB less to download** | The first run no longer fetches (or builds) ImageBind, CLAP, SAM-Audio-Judge and PE-A-Frame, which lite mode threw away |
-| 🔧 **Installs again** | Fixes the `_from_pretrained() missing ... 'proxies' and 'resume_download'` error ([#9](https://github.com/0x0funky/audioghost-ai/issues/9)) and the `gdk_pixbuf-2.0-0.dll` popup / `Could not load libtorchcodec` on Windows ([#10](https://github.com/0x0funky/audioghost-ai/issues/10)); pins torch/xformers so pip can't swap in a CPU build; CUDA 12.8 for RTX 50-series |
-| 🍎🐧 **macOS & Linux** | One-click `install.sh` / `start.sh` / `stop.sh` (based on community [PR #8](https://github.com/0x0funky/audioghost-ai/pull/8)). Linux uses your NVIDIA GPU; Apple Silicon runs on the CPU (Apple GPU is experimental) |
-| 🎚️ **Seamless long files** | Overlapping, crossfaded chunks - no seams, nothing dropped at the end |
-| 🕒 **Temporal Lock works** | The selected region was ignored in v1.0 |
-| ✨ **New options** | Speed/Quality presets · Stereo · Meta's `-tv` precision models · WAV/FLAC/MP3 + ZIP downloads with readable names · working Cancel · queue position · download progress |
-| ♿ **Accessible** | Screen-reader labels, keyboard upload, live progress ([#6](https://github.com/0x0funky/audioghost-ai/issues/6)) |
-| 🖥️ **CLI** | `python sam_audio_lite.py song.mp3 "vocals"` |
+| 🎼 **Several sounds, one run** | Type `speech`, `background music`, `drums`... and each sound lands on its own track. An **Everything else** track holds what is left |
+| 🎚️ **A mixer** | Volume, mute and solo per track, plus *hold to hear the original*. All tracks at 0 dB add up to the original exactly, so muting a track removes exactly that sound |
+| 💾 **Export what you hear** | One mixed file, single tracks as a ZIP, or your video with the new soundtrack: 24-bit WAV, FLAC or MP3, named like `song [no vocals].wav` |
+| 🕒 **Mark where a sound is, or isn't** | Drag on the timeline: *Sound is here* or *Not here*, per sound |
+| 🔄 **Nothing gets lost** | Sessions survive page reloads and restarts; recent work stays one click away for 24 hours |
+| 🧭 **A new interface** | One workspace instead of a long form, system status in the top bar, dark and light themes, keyboard friendly ([screenshots](#-demo)) |
+| ⚡ **Extra sounds cost less** | "Everything else" is computed instead of decoded: about 5 s per sound for a 30 s clip (Base, Balanced, RTX 4090) |
+| 🩹 **v1.1.1** | No more false "worker is not running" warning |
 
-Full list in the [CHANGELOG](CHANGELOG.md).
+v1.1 made separation 4–6× faster, fixed the installers and added macOS & Linux. Full list in the [CHANGELOG](CHANGELOG.md).
 
 ## 🎬 Demo
 
-### Audio Separation
-https://github.com/user-attachments/assets/49248e25-0c56-46ab-a821-2de7f7016bb6
+![The AudioGhost workspace: the original, a speech track, a background-music track and everything else, with the separate panel on the right](docs/images/v1.2-workspace.png)
 
-### Video Upload
-https://github.com/user-attachments/assets/6b8c08a8-c84f-4fc3-83ad-5703f474fc1b
+<details>
+<summary>Start screen</summary>
+
+![Start screen: drop zone, recent sessions, and a card showing the GPU, Hugging Face access and downloaded models](docs/images/v1.2-start.png)
+
+</details>
 
 ## Features
 
-- 🎯 **Text-Guided Separation** - Describe what you want: "vocals", "drums", "a dog barking", "crowd noise"
-- 🎬 **Video Support** - Separate a video's soundtrack and download the video with the new audio
-- 🕒 **Temporal Lock** - Mark a region where the sound is audible to point the model at the right source
+- 🎯 **Text-guided separation** - describe any sound: "vocals", "drums", "a dog barking", "crowd noise"
+- 🎼 **Multi-track** - several sounds per run, each on its own track, plus everything else
+- 🎚️ **Mixer** - volume, mute, solo and *hold to hear the original*; all tracks play in sync
+- 🎬 **Video** - preview the video with your mix and export it with the new soundtrack
+- 🕒 **Temporal Lock** - mark where a sound is (or isn't) audible to point the model at the right source
 - 🚀 **Consumer GPUs** - Small runs in ~4.2 GB of VRAM; long files are processed in crossfaded chunks
 - ⚡ **Speed / Quality presets** - Fast (8 steps), Balanced (16, Meta's default), High (32)
-- 🎧 **Stereo** - Optional per-channel separation that keeps the stereo image
-- 🎛️ **Stem Mixer** - Play, mute and compare the isolated sound and the rest
-- 💾 **Exports** - WAV (24-bit), FLAC, MP3, or everything as a ZIP
+- 🎧 **Stereo** - optional per-channel separation that keeps the stereo image
+- 💾 **Exports** - 24-bit WAV, FLAC, MP3 or a ZIP of single tracks, with readable names
+- 🔄 **Sessions** - your work survives reloads and restarts (kept for 24 hours)
 
 ## ⚡ Performance
 
@@ -72,7 +75,8 @@ https://github.com/user-attachments/assets/6b8c08a8-c84f-4fc3-83ad-5703f474fc1b
 ## 🗺️ Roadmap
 
 - 🖱️ **Visual Prompting** - click an object in the video to isolate its sound (SAM 2.1 / [SAM 3.1](https://huggingface.co/facebook/sam3.1) masks + SAM-Audio `-tv`)
-- 🎼 **Multi-stem in one pass** - e.g. vocals + drums + bass from a single run
+- 🧩 **Fewer moving parts** - an in-process job queue instead of Redis + Celery (one less thing to install)
+- 🎵 **Bundled samples** - royalty-free clips to try AudioGhost without your own files
 - 🎚️ **Specialised engines** for standard music stems (BS-/Mel-RoFormer) next to SAM-Audio for "any sound"
 - 🍏 **Apple GPU (MPS) by default** once it's verified on more Macs (opt in today with `AUDIOGHOST_DEVICE=mps`)
 
@@ -226,15 +230,15 @@ Navigate to `http://localhost:3000`
 
 ## Usage
 
-1. **Upload** an audio or video file (drag & drop, click, or Tab + Enter)
-2. **Describe** what to extract or remove: "vocals", "drums", "background music", "a dog barking", "crowd noise", "a person speaking"
+1. **Upload** an audio or video file (drag & drop or *Choose a file*). It shows up under **Recent**, and the page URL points to it, so a reload never loses your work.
+2. **Type the sounds you want**, one at a time (Enter), or pick a suggestion: "speech", "vocals", "background music", "a dog barking", "traffic"... Each becomes its own track.
 3. Optional:
-   - **Temporal Lock** (audio files): select a region where the sound is clearly audible - it's a hint, the whole file is still processed
-   - **Speed / Quality**: Fast for drafts, High for final exports
-   - **Precision model (-tv)**: Meta's checkpoints that pick the right sound more reliably
-   - **Keep stereo**: separate left and right channels (about 2× processing)
-4. Click **Extract** or **Remove** (both stems are always produced). Cancel any time.
-5. **Preview** in the Stem Mixer and **download** single stems or a ZIP as WAV, FLAC or MP3. For videos you can also download the video with the new soundtrack.
+   - **Mark where a sound is**: select a new sound in the panel, then drag across the timeline with *Sound is here* or *Not here* (or use *Mark at playhead*). It's a hint; the whole file is still processed
+   - **Model** and **Quality**: Small / Fast for drafts, Large / High for final exports
+   - **Advanced**: keep stereo, Meta's precision (`-tv`) checkpoints, full FP32, max chunk length
+4. Click **Separate**. Tracks appear as they finish, so you can listen to one while the next is running. Cancel a track with its ✕.
+5. **Mix**: S (solo), M (mute) and a volume slider per track, *Hold to hear the original* to compare, Space to play and pause. **Everything else** is the original minus every track, so all tracks at 0 dB give you back the original.
+6. **Export** what you hear as one file, single tracks as a ZIP, or (for videos) the video with your mix.
 
 ### Command line
 
@@ -260,6 +264,35 @@ python sam_audio_lite.py live.flac "crowd noise" --stereo --start 12.5 --end 16 
 ## API Reference
 
 Interactive docs: `http://localhost:8000/docs`
+
+### Sessions (v1.2)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/sessions` | Upload a file (multipart `file`); returns the session |
+| `GET` | `/api/sessions` | Recent sessions |
+| `GET` | `/api/sessions/{id}` | A session with its tracks, progress and file URLs |
+| `DELETE` | `/api/sessions/{id}` | Delete a session |
+| `POST` | `/api/sessions/{id}/separate` | Queue one or more prompts, one track each (JSON below) |
+| `DELETE` | `/api/sessions/{id}/tracks/{track}` | Cancel a running track, or remove a queued or finished one |
+| `GET` | `/api/sessions/{id}/files/{name}` | Audio, waveform overviews and the source video (Range requests) |
+| `POST` | `/api/sessions/{id}/export` | `kind`: `mix`, `tracks` (ZIP) or `video`; `format`: `wav`, `flac` or `mp3`; `gains`: linear gain per track id and `"rest"`; `tracks`: ids for `tracks` |
+| `GET` | `/api/system/status` | Redis and worker status, GPU, loaded model |
+
+```json
+{
+  "prompts": [
+    { "text": "speech" },
+    { "text": "background music", "anchors": [["+", 12.0, 18.5], ["-", 40.0, 44.0]] }
+  ],
+  "model_size": "base", "quality": "balanced", "variant": "default",
+  "stereo": false, "use_float32": false, "chunk_duration": 25
+}
+```
+
+Anchors are optional: `"+"` = the sound is audible here, `"-"` = it isn't (start and end in seconds).
+
+### Single-task API (v1.1, still supported)
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -306,8 +339,8 @@ On Windows, running out of VRAM often doesn't crash - the driver spills into sys
 ### The page at localhost:3000 is a different app
 Something else already uses port 3000, so Next.js picked the next free port (3001, 3002, ...) - check the "AudioGhost Frontend" window for the URL. The API accepts local ports 3000-3099.
 
-### The UI says the worker or Redis isn't running
-Use `start.bat`, which starts Redis, the API, the worker and the UI. For manual setups, start Redis before the worker ([#5](https://github.com/0x0funky/audioghost-ai/issues/5)).
+### The status chip says the worker or Redis isn't running
+The chip in the top-right corner turns amber or red; click it for details. Use `start.bat` (or `./start.sh`), which starts Redis, the API, the worker and the UI. For manual setups, start Redis before the worker ([#5](https://github.com/0x0funky/audioghost-ai/issues/5)). Right after start-up the worker needs about 20 s to load its libraries ("Worker starting..."); jobs you start meanwhile simply wait in the queue.
 
 ### HuggingFace 401 / 403
 Reconnect in the UI. 403 means your account hasn't been granted access to that model yet - open the model's page on HuggingFace (the `-tv` checkpoints are separate repos) and request access there.
@@ -319,21 +352,25 @@ audioghost-ai/
 ├── backend/
 │   ├── main.py               # FastAPI app
 │   ├── settings.py           # paths & env configuration
+│   ├── sessions.py           # sessions: storage, "everything else", mixing, exports
 │   ├── constraints.txt       # tested versions of torch / torchcodec / xformers / transformers
 │   ├── requirements-lean.txt # SAM-Audio deps for Apple Silicon (no decord / xformers)
 │   ├── api/
 │   │   ├── auth.py           # HuggingFace auth
-│   │   ├── separate.py       # create tasks (validation, streaming upload)
-│   │   └── tasks.py          # status, cancel, downloads, ZIP, video remux
+│   │   ├── sessions.py       # v1.2 sessions API
+│   │   ├── separate.py       # v1.1 single-task API (validation, streaming upload)
+│   │   └── tasks.py          # v1.1 status, cancel, downloads, ZIP, video remux
 │   ├── workers/
 │   │   ├── celery_app.py     # Celery config
-│   │   ├── tasks.py          # job lifecycle (progress, cancel, outputs)
+│   │   ├── tasks.py          # jobs (sessions, v1.1 tasks), progress, cancel, heartbeat
 │   │   ├── sam_lite.py       # SAM-Audio Lite engine
 │   │   ├── audio_io.py       # decode / encode / export helpers
 │   │   ├── compat.py         # platform shims (xformers stand-in on Apple Silicon)
-│   │   └── queue_state.py    # queue position, cancel flags
+│   │   └── queue_state.py    # queue position, cancel flags, worker heartbeat, locks
 │   └── tests/                # unit tests (python -m pytest backend/tests)
-├── frontend/                 # Next.js app (src/app, src/components, src/lib)
+├── frontend/                 # Next.js app: src/components (Workspace, Timeline, SeparatePanel, ...),
+│                             #   src/lib (multi-track player, API client)
+├── docs/images/              # screenshots
 ├── scripts/benchmark.py      # performance benchmark
 ├── sam_audio_lite.py         # command-line tool
 ├── install.bat / start.bat / stop.bat   # Windows
