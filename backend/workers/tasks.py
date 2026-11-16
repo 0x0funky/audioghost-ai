@@ -1,161 +1,95 @@
 """
-Celery Tasks - Audio Separation Workers
-With SAM Audio Lite optimization for low VRAM usage
+Celery tasks - audio separation worker.
+
+The heavy lifting lives in ``workers/sam_lite.py``; this module handles the job
+lifecycle: input decoding, model caching, progress, cancellation and outputs.
+Heavy imports (torch, sam_audio) happen inside the task so the API process,
+which imports this module to enqueue jobs, stays light.
 """
-import os
-import sys
+from __future__ import annotations
+
 import gc
+import logging
+import os
+import threading
+import time
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
-from celery import current_task
+from celery.exceptions import Ignore
+from celery.signals import worker_ready
 
+from settings import OUTPUT_DIR, read_hf_token
+from workers import queue_state
 from workers.celery_app import celery_app
 
-# Add parent directory to path for SAM Audio imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+logger = logging.getLogger(__name__)
 
-OUTPUT_DIR = Path("outputs")
-OUTPUT_DIR.mkdir(exist_ok=True)
+# One model in memory at a time: (cache key, LiteModel)
+_MODEL_CACHE: dict = {}
+_MODEL_LOCK = threading.Lock()
 
-# Global model cache to avoid reloading
-_model_cache = {}
-_processor_cache = {}
+QUALITY_PRESETS = ("fast", "balanced", "high")
 
 
-def update_progress(progress: int, message: str):
-    """Update task progress"""
-    current_task.update_state(
-        state="PROGRESS",
-        meta={"progress": progress, "message": message}
-    )
+def _precision(use_float32: bool, device) -> str:
+    """fp32 on request/CPU; otherwise AUDIOGHOST_PRECISION (fp16 default, or bf16)."""
+    if use_float32 or device.type == "cpu":
+        return "fp32"
+    preferred = os.environ.get("AUDIOGHOST_PRECISION", "fp16").strip().lower()
+    return preferred if preferred in ("fp16", "bf16") else "fp16"
 
 
-def create_lite_model(model_name: str, hf_token: str = None):
+def _get_model(model_size: str, variant: str, use_float32: bool, token, progress):
+    """Return the cached lite model, evicting a different one first."""
+    from workers import sam_lite
+
+    repo_id = sam_lite.model_repo_id(model_size, variant)
+    device = sam_lite.resolve_device()
+    precision = _precision(use_float32, device)
+    key = (repo_id, str(device), precision)
+    with _MODEL_LOCK:
+        if key in _MODEL_CACHE:
+            return _MODEL_CACHE[key]
+
+        for old_key in list(_MODEL_CACHE):
+            logger.info("Unloading %s", old_key[0])
+            sam_lite.unload(_MODEL_CACHE.pop(old_key))
+
+        sam_lite.ensure_downloaded(
+            repo_id, token, lambda frac, msg: progress(8 + int(frac * 17), msg)
+        )
+        progress(26, f"Loading {repo_id.split('/')[-1]} ({precision})...")
+        lite = sam_lite.load_lite_model(repo_id, device=device, precision=precision, token=token)
+        _MODEL_CACHE[key] = lite
+        return lite
+
+
+@worker_ready.connect
+def _warm_up(**_kwargs):
     """
-    Create a memory-optimized SAM Audio model by removing unused components.
-    
-    Reduces VRAM usage from ~11GB to ~4-5GB by:
-    - Replacing vision_encoder with a dummy
-    - Disabling visual_ranker
-    - Disabling text_ranker
-    - Disabling span_predictor
+    Importing SAM-Audio's dependencies takes ~20 s (timm, transformers, ...).
+    Do it in the background as soon as the worker starts so the first job
+    doesn't pay for it. Set AUDIOGHOST_PRELOAD_MODEL=small|base|large to also
+    load a model into VRAM up front.
     """
-    import torch
-    from sam_audio import SAMAudio, SAMAudioProcessor
-    
-    print(f"Loading {model_name} (lite mode)...")
-    
-    # Load model
-    if hf_token:
-        model = SAMAudio.from_pretrained(model_name, token=hf_token)
-    else:
-        model = SAMAudio.from_pretrained(model_name)
-    
-    processor = SAMAudioProcessor.from_pretrained(model_name)
-    
-    print("Optimizing model for low VRAM...")
-    
-    # Get vision encoder dim before deleting
-    vision_dim = model.vision_encoder.dim if hasattr(model.vision_encoder, 'dim') else 1024
-    
-    # Delete heavy components
-    del model.vision_encoder
-    gc.collect()
-    
-    # Store the dim for _get_video_features
-    model._vision_encoder_dim = vision_dim
-    
-    # Replace _get_video_features to not use vision_encoder
-    def _get_video_features_lite(self, video, audio_features):
-        B, T, _ = audio_features.shape
-        return audio_features.new_zeros(B, self._vision_encoder_dim, T)
-    
-    import types
-    model._get_video_features = types.MethodType(_get_video_features_lite, model)
-    
-    # Delete rankers
-    if hasattr(model, 'visual_ranker') and model.visual_ranker is not None:
-        del model.visual_ranker
-        model.visual_ranker = None
-        gc.collect()
-    
-    if hasattr(model, 'text_ranker') and model.text_ranker is not None:
-        del model.text_ranker
-        model.text_ranker = None
-        gc.collect()
-    
-    # Delete span predictor
-    if hasattr(model, 'span_predictor') and model.span_predictor is not None:
-        del model.span_predictor
-        model.span_predictor = None
-        gc.collect()
-    
-    if hasattr(model, 'span_predictor_transform') and model.span_predictor_transform is not None:
-        del model.span_predictor_transform
-        model.span_predictor_transform = None
-        gc.collect()
-    
-    # Force garbage collection
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    
-    print("Model optimization complete!")
-    
-    return model, processor
 
+    def run():
+        try:
+            import torch  # noqa: F401
+            import sam_audio  # noqa: F401
+            from workers import sam_lite  # noqa: F401
 
-def get_or_load_lite_model(model_name: str, hf_token: str, device: str, dtype):
-    """Get cached lite model or create it - only keeps ONE model in memory"""
-    import torch
-    
-    # Include dtype in cache key to ensure correct model is loaded
-    dtype_str = "bf16" if dtype == torch.bfloat16 else "fp32"
-    cache_key = f"{model_name}_lite_{device}_{dtype_str}"
-    
-    print(f"[DEBUG] Looking for cached model with key: {cache_key}")
-    print(f"[DEBUG] Current cache keys: {list(_model_cache.keys())}")
-    
-    if cache_key not in _model_cache:
-        print(f"[DEBUG] Cache miss - creating new lite model")
-        
-        # IMPORTANT: Clear any existing models first to free memory
-        if len(_model_cache) > 0:
-            print(f"[DEBUG] Clearing {len(_model_cache)} existing model(s) from cache...")
-            for old_key in list(_model_cache.keys()):
-                del _model_cache[old_key]
-            for old_key in list(_processor_cache.keys()):
-                del _processor_cache[old_key]
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                print(f"[DEBUG] GPU Memory after clearing old models: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
-        
-        model, processor = create_lite_model(model_name, hf_token)
-        
-        print(f"[DEBUG] Converting model to {device} with dtype {dtype}")
-        model = model.eval().to(device, dtype)
-        
-        _model_cache[cache_key] = model
-        _processor_cache[model_name] = processor
-        
-        if torch.cuda.is_available():
-            print(f"[DEBUG] GPU Memory after loading: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
-    else:
-        print(f"[DEBUG] Cache hit - using existing model")
-    
-    return _model_cache[cache_key], _processor_cache[model_name]
+            logger.info("Warm-up: SAM-Audio libraries imported")
+            preload = os.environ.get("AUDIOGHOST_PRELOAD_MODEL", "").strip().lower()
+            token = read_hf_token()
+            if preload in sam_lite.MODEL_SIZES and token:
+                _get_model(preload, "default", False, token, lambda *_: None)
+                logger.info("Warm-up: preloaded sam-audio-%s", preload)
+        except Exception as err:  # noqa: BLE001 - warm-up is best effort
+            logger.warning("Warm-up skipped: %s", err)
 
-
-
-
-def cleanup_gpu_memory():
-    """Clean up GPU memory after task"""
-    import torch
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        gc.collect()
+    threading.Thread(target=run, name="audioghost-warmup", daemon=True).start()
 
 
 @celery_app.task(bind=True)
@@ -168,245 +102,109 @@ def separate_audio_task(
     model_size: str = "base",
     chunk_duration: float = 25.0,
     use_float32: bool = False,
-    is_video: bool = False
+    is_video: bool = False,
+    quality: str = "balanced",
+    stereo: bool = False,
+    model_variant: str = "default",
+    original_filename: Optional[str] = None,
+    seed: Optional[int] = None,
+    batch_size: int = 0,
 ):
     """
-    Separate audio using SAM Audio Lite (memory optimized)
-    
-    Args:
-        audio_path: Path to input audio or video file
-        description: Text prompt for separation
-        mode: "extract" or "remove"
-        anchors: Optional temporal anchors [["+", start, end], ...]
-        model_size: Model size (small/base/large)
-        chunk_duration: Audio chunk duration in seconds (5-60)
-        use_float32: Use float32 precision for better quality
-        is_video: If True, extract audio from video file first
-    
-    Returns:
-        Dictionary with paths to output files
+    Separate ``description`` from an audio or video file.
+
+    Outputs (32-bit float WAV, model sample rate):
+      ``{task_id}.original.wav`` - the decoded input
+      ``{task_id}.ghost.wav``    - the described sound ("isolated")
+      ``{task_id}.clean.wav``    - everything else ("without")
     """
     import torch
-    import torchaudio
-    import time
-    import subprocess
-    import shutil
-    from huggingface_hub import login
-    
+
+    from workers import audio_io, sam_lite
+
     task_id = self.request.id
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    video_path = None  # Will be set if input is video
-    
-    # Debug: Show received parameter
-    print(f"[DEBUG] use_float32 parameter received: {use_float32} (type: {type(use_float32).__name__})")
-    print(f"[DEBUG] is_video parameter received: {is_video}")
-    
-    # Handle video files - extract audio using FFmpeg
-    if is_video:
-        update_progress(2, "Extracting audio from video...")
-        video_path = Path(audio_path)
-        
-        # Copy video to output directory for later playback
-        output_video_path = OUTPUT_DIR / f"{task_id}.video{video_path.suffix}"
-        shutil.copy2(video_path, output_video_path)
-        print(f"[DEBUG] Copied video to: {output_video_path}")
-        
-        # Extract audio from video using FFmpeg
-        extracted_audio_path = OUTPUT_DIR / f"{task_id}.extracted.wav"
-        ffmpeg_cmd = [
-            "ffmpeg", "-y",
-            "-i", str(video_path),
-            "-vn",                    # No video
-            "-acodec", "pcm_s16le",   # PCM 16-bit
-            "-ar", "44100",           # 44.1kHz sample rate
-            "-ac", "1",               # Mono
-            str(extracted_audio_path)
-        ]
-        
-        try:
-            result = subprocess.run(
-                ffmpeg_cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            print(f"[DEBUG] FFmpeg audio extraction successful")
-        except subprocess.CalledProcessError as e:
-            raise Exception(f"FFmpeg audio extraction failed: {e.stderr}")
-        
-        # Use extracted audio for processing
-        audio_path = str(extracted_audio_path)
-    
-    # Set precision based on use_float32 parameter
-    if use_float32 or device == "cpu":
-        dtype = torch.float32
-        print(f"[DEBUG] Using float32 precision (High Quality Mode)")
-    else:
-        dtype = torch.bfloat16
-        print(f"[DEBUG] Using bfloat16 precision (Memory Optimized)")
-    
-    # Start timing
-    start_time = time.time()
-    
+    started = time.perf_counter()
+    last_reported = {"progress": -1, "message": None, "time": 0.0}
+
+    def progress(value: int, message: str):
+        now = time.monotonic()
+        # Throttle Redis writes, but always send new messages and big jumps.
+        if (
+            message == last_reported["message"]
+            and value - last_reported["progress"] < 2
+            and now - last_reported["time"] < 1.0
+        ):
+            return
+        last_reported.update(progress=value, message=message, time=now)
+        self.update_state(state="PROGRESS", meta={"progress": int(value), "message": message})
+        queue_state.touch_running(task_id)
+
+    def should_cancel() -> bool:
+        return queue_state.is_cancelled(task_id)
+
+    queue_state.mark_started(task_id)
     try:
-        update_progress(5, "Initializing...")
-        
-        # Load HuggingFace token
-        backend_dir = Path(__file__).parent.parent
-        token_file = backend_dir / ".hf_token"
-        if token_file.exists():
-            with open(token_file, "r") as f:
-                hf_token = f.read().strip()
-            login(token=hf_token)
-        else:
-            raise Exception("HuggingFace token not found. Please authenticate first.")
-        
-        # Select model based on size
-        model_name = f"facebook/sam-audio-{model_size}"
-        
-        update_progress(10, f"Loading {model_name} (lite mode)...")
-        
-        # Clean up before loading
-        cleanup_gpu_memory()
-        
-        # Load lite model (with caching)
-        model, processor = get_or_load_lite_model(model_name, hf_token, device, dtype)
-        
-        update_progress(30, "Loading audio...")
-        
-        # Get sample rate
-        sample_rate = processor.audio_sampling_rate
-        
-        # Load and preprocess audio
-        audio, orig_sr = torchaudio.load(audio_path)
-        if orig_sr != sample_rate:
-            resampler = torchaudio.transforms.Resample(orig_sr, sample_rate)
-            audio = resampler(audio)
-        
-        # Convert to mono if stereo
-        if audio.shape[0] > 1:
-            audio = audio.mean(dim=0, keepdim=True)
-        
-        # Calculate audio duration
-        audio_duration = audio.shape[1] / sample_rate
-        print(f"[DEBUG] Audio duration: {audio_duration:.2f}s")
-        
-        # Chunking settings (from parameter, clamped to 5-60)
-        CHUNK_DURATION = max(5.0, min(60.0, chunk_duration))
-        MAX_CHUNK_SAMPLES = int(sample_rate * CHUNK_DURATION)
-        
-        # Check if chunking is needed
-        if audio.shape[1] > MAX_CHUNK_SAMPLES:
-            print(f"[DEBUG] Audio is {audio_duration:.1f}s, using chunking ({CHUNK_DURATION}s chunks)")
-            
-            # Split audio into chunks
-            audio_tensor = audio.squeeze(0).to(device, dtype)
-            chunks = torch.split(audio_tensor, MAX_CHUNK_SAMPLES, dim=-1)
-            total_chunks = len(chunks)
-            
-            out_target = []
-            out_residual = []
-            
-            for i, chunk in enumerate(chunks):
-                # Update progress
-                chunk_progress = 30 + int((i / total_chunks) * 50)
-                update_progress(chunk_progress, f"Processing chunk {i+1}/{total_chunks}...")
-                
-                # Skip very short chunks
-                if chunk.shape[-1] < sample_rate:  # Less than 1 second
-                    print(f"[DEBUG] Skipping chunk {i+1} (too short)")
-                    continue
-                
-                # Prepare batch for this chunk
-                batch = processor(
-                    audios=[chunk.unsqueeze(0)],
-                    descriptions=[description]
-                ).to(device)
-                
-                # Run separation
-                with torch.inference_mode():
-                    with torch.cuda.amp.autocast(enabled=(device == "cuda")):
-                        result = model.separate(
-                            batch,
-                            predict_spans=False,
-                            reranking_candidates=1
-                        )
-                
-                out_target.append(result.target[0].cpu())
-                out_residual.append(result.residual[0].cpu())
-                
-                # Clean up chunk results
-                del batch, result
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            
-            # Concatenate all chunks
-            target_audio = torch.cat(out_target, dim=-1).clamp(-1, 1).float().unsqueeze(0)
-            residual_audio = torch.cat(out_residual, dim=-1).clamp(-1, 1).float().unsqueeze(0)
-            
-            del out_target, out_residual, chunks, audio_tensor
-            
-        else:
-            print(f"[DEBUG] Audio is {audio_duration:.1f}s, processing as single batch")
-            
-            update_progress(50, "Running separation...")
-            
-            # Process entire audio at once
-            batch = processor(
-                audios=[audio_path],
-                descriptions=[description]
-            ).to(device)
-            
-            # Run separation
-            with torch.inference_mode():
-                with torch.cuda.amp.autocast(enabled=(device == "cuda")):
-                    result = model.separate(
-                        batch,
-                        predict_spans=False,
-                        reranking_candidates=1
-                    )
-            
-            target_audio = result.target[0].float().unsqueeze(0).cpu()
-            residual_audio = result.residual[0].float().unsqueeze(0).cpu()
-            
-            del batch, result
-        
-        update_progress(80, "Saving results...")
-        
-        # Output paths
-        output_base = OUTPUT_DIR / task_id
-        original_path = output_base.with_suffix(".original.wav")
-        ghost_path = output_base.with_suffix(".ghost.wav")
-        clean_path = output_base.with_suffix(".clean.wav")
-        
-        # Save original audio
-        torchaudio.save(str(original_path), audio.cpu(), sample_rate)
-        
-        # Save separated audio
-        if mode == "extract":
-            torchaudio.save(str(ghost_path), target_audio, sample_rate)
-            torchaudio.save(str(clean_path), residual_audio, sample_rate)
-        else:
-            torchaudio.save(str(ghost_path), target_audio, sample_rate)
-            torchaudio.save(str(clean_path), residual_audio, sample_rate)
-        
-        update_progress(100, "Complete!")
-        
-        # Aggressive cleanup
-        print(f"[DEBUG] Cleaning up GPU memory...")
-        del target_audio, residual_audio, audio
-        
-        gc.collect()
-        cleanup_gpu_memory()
-        
-        if torch.cuda.is_available():
-            print(f"[DEBUG] GPU Memory after cleanup: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
-        
-        # Calculate processing time
-        processing_time = time.time() - start_time
-        print(f"[DEBUG] Processing completed in {processing_time:.2f}s for {audio_duration:.2f}s audio")
-        
-        result = {
+        if should_cancel():
+            raise sam_lite.SeparationCancelled()
+        description = (description or "").strip()
+        if not description:
+            raise ValueError("Please describe the sound to separate.")
+        if quality not in QUALITY_PRESETS:
+            quality = "balanced"
+        steps = sam_lite.QUALITY_STEPS[quality]
+        chunk_duration = max(5.0, min(60.0, float(chunk_duration)))
+        anchor_list = sam_lite.normalize_anchors(anchors)
+
+        token = read_hf_token()
+        if not token:
+            raise RuntimeError("HuggingFace token not found. Click 'Connect HuggingFace' first.")
+
+        progress(5, "Preparing...")
+        lite = _get_model(model_size, model_variant, use_float32, token, progress)
+        if should_cancel():
+            raise sam_lite.SeparationCancelled()
+
+        progress(28, "Reading audio..." if not is_video else "Reading the video's audio track...")
+        audio = audio_io.load_audio(audio_path, lite.sample_rate, stereo=stereo)
+        num_channels, num_samples = audio.shape
+        audio_duration = num_samples / lite.sample_rate
+        logger.info(
+            "Task %s: %.1fs, %d ch, %s, quality=%s, anchors=%s",
+            task_id, audio_duration, num_channels, lite.repo_id, quality, anchor_list,
+        )
+
+        def separation_progress(fraction: float, message: str):
+            progress(30 + int(fraction * 62), message)
+
+        result = sam_lite.separate(
+            lite,
+            audio,
+            description,
+            chunk_seconds=chunk_duration,
+            steps=steps,
+            anchors=anchor_list,
+            batch_size=batch_size,
+            seed=seed,
+            progress=separation_progress,
+            should_cancel=should_cancel,
+        )
+
+        progress(93, "Saving results...")
+        base = OUTPUT_DIR / task_id
+        original_path = base.with_suffix(".original.wav")
+        ghost_path = base.with_suffix(".ghost.wav")
+        clean_path = base.with_suffix(".clean.wav")
+        audio_io.save_audio(original_path, audio, lite.sample_rate)
+        audio_io.save_audio(ghost_path, result.target, lite.sample_rate)
+        audio_io.save_audio(clean_path, result.residual, lite.sample_rate)
+
+        processing_time = time.perf_counter() - started
+        logger.info(
+            "Task %s done in %.1fs (%.1fx realtime, %d chunks, batch %d)",
+            task_id, processing_time, audio_duration / max(processing_time, 1e-6),
+            result.chunks, result.batch_size,
+        )
+        output = {
             "original_path": str(original_path),
             "ghost_path": str(ghost_path),
             "clean_path": str(clean_path),
@@ -414,51 +212,63 @@ def separate_audio_task(
             "mode": mode,
             "audio_duration": round(audio_duration, 2),
             "processing_time": round(processing_time, 2),
-            "model_size": model_size
+            "model_size": model_size,
+            "model_variant": model_variant,
+            "model": lite.repo_id,
+            "precision": lite.precision,
+            "quality": quality,
+            "steps": steps,
+            "stereo": num_channels > 1,
+            "channels": num_channels,
+            "sample_rate": lite.sample_rate,
+            "chunks": result.chunks,
+            "batch_size": result.batch_size,
+            "seed": result.seed,
+            "anchors": [list(a) for a in anchor_list],
+            "original_filename": original_filename,
+            "is_video": bool(is_video),
         }
-        
-        # Add video path if this was a video file
-        if video_path is not None:
-            output_video_path = OUTPUT_DIR / f"{task_id}.video{video_path.suffix}"
-            result["video_path"] = str(output_video_path)
-            result["is_video"] = True
-        
-        return result
+        if is_video:
+            output["video_path"] = str(audio_path)
+        progress(100, "Complete!")
+        return output
 
-        
-    except Exception as e:
+    except sam_lite.SeparationCancelled:
+        # Custom state: Celery decodes REVOKED results as exceptions, a plain
+        # meta dict there breaks AsyncResult. Ignore() keeps this state.
+        self.update_state(state="CANCELLED", meta={"progress": 0, "message": "Cancelled"})
+        raise Ignore()
+    except Exception as err:
+        logger.exception("Task %s failed", task_id)
+        raise RuntimeError(f"Separation failed: {err}") from None
+    finally:
+        queue_state.mark_finished(task_id)
         gc.collect()
-        cleanup_gpu_memory()
-        raise Exception(f"Separation failed: {str(e)}")
-
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 @celery_app.task(bind=True)
-def match_pattern_task(
-    self,
-    audio_path: str,
-    sample_path: str,
-    threshold: float = 0.85,
-    model_size: str = "base"
-):
-    """
-    Find and remove sounds similar to a sample
-    
-    Args:
-        audio_path: Path to input audio file
-        sample_path: Path to sample audio file
-        threshold: Similarity threshold (0-1)
-        model_size: Model size (small/base/large)
-    
-    Returns:
-        Dictionary with paths to output files and matched segments
-    """
-    # TODO: Implement pattern matching with CLAP embeddings
-    # This is a placeholder for MVP v1.0
-    
-    update_progress(50, "Pattern matching not yet implemented in MVP")
-    
-    return {
-        "status": "not_implemented",
-        "message": "Pattern matching will be available in v1.1"
-    }
+def match_pattern_task(self, audio_path: str, sample_path: str, threshold: float = 0.85,
+                       model_size: str = "base"):
+    """Placeholder: find and remove sounds similar to a sample (planned)."""
+    return {"status": "not_implemented", "message": "Pattern matching is on the roadmap."}
+
+
+def cleanup_old_files(max_age_hours: float) -> int:
+    """Delete uploads/outputs older than ``max_age_hours``. Returns files removed."""
+    from settings import UPLOAD_DIR
+
+    if max_age_hours <= 0:
+        return 0
+    cutoff = time.time() - max_age_hours * 3600
+    removed = 0
+    for directory in (UPLOAD_DIR, OUTPUT_DIR):
+        for path in Path(directory).iterdir():
+            try:
+                if path.is_file() and path.stat().st_mtime < cutoff:
+                    path.unlink()
+                    removed += 1
+            except OSError:
+                continue
+    return removed

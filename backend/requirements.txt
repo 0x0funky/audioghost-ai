@@ -1,4 +1,5 @@
 # AudioGhost AI - Backend Dependencies
+# Install AFTER PyTorch and SAM-Audio (see README / install.bat).
 
 # FastAPI Framework
 fastapi==0.115.6
@@ -10,10 +11,15 @@ celery==5.4.0
 redis==5.2.1
 
 # Media Processing
+soundfile>=0.12,<0.14
 pydub==0.25.1
 
-# AI Dependencies (SAM Audio already installed from parent)
-# huggingface_hub is included in SAM Audio deps
+# Version guards for SAM-Audio (it only asks for transformers>=4.54.0):
+# huggingface_hub 1.x stopped passing `proxies`/`resume_download`, which
+# SAM-Audio's loader requires -> "TypeError: BaseModel._from_pretrained() missing
+# 2 required keyword-only arguments" (issue #9). transformers 5 requires hub 1.x.
+transformers>=4.54.0,<5
+huggingface_hub>=0.34.0,<1.0
 
 # Utilities
 python-dotenv==1.0.1
