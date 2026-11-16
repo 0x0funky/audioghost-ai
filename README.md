@@ -14,7 +14,7 @@ Describe the sound you want to extract or remove using natural language. Powered
 |---|---|
 | ⚡ **~4–6× faster** | A 4:26 song with the Small model: **95 s → 17 s** on an RTX 4090 ([benchmarks](#-performance)) |
 | 🎯 **More precise** | On our test clips the new mixed precision stays within 44–57 dB SNR of a strict fp32 run (v1.0's default path: 25–32 dB) |
-| 💾 **~25 GB less to download** | The first run no longer fetches models that lite mode threw away; the model loads in seconds |
+| 💾 **~25 GB less to download** | The first run no longer fetches (or builds) ImageBind, CLAP, SAM-Audio-Judge and PE-A-Frame, which lite mode threw away |
 | 🔧 **Installs again** | Fixes the `_from_pretrained() missing ... 'proxies' and 'resume_download'` error ([#9](https://github.com/0x0funky/audioghost-ai/issues/9)); installer picks the CUDA 12.8 build for RTX 50-series |
 | 🎚️ **Seamless long files** | Overlapping, crossfaded chunks - no seams, nothing dropped at the end |
 | 🕒 **Temporal Lock works** | The selected region was ignored in v1.0 |
