@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from api import auth, separate, tasks
 from settings import FRONTEND_ORIGIN_REGEX, FRONTEND_ORIGINS, OUTPUT_DIR, RETENTION_HOURS
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 
 @asynccontextmanager
@@ -66,8 +66,10 @@ async def system_status():
 
     redis_ok = await run_in_threadpool(queue_state.redis_ok)
     running = queue_state.running_task() if redis_ok else None
-    worker_ok = bool(running)
+    heartbeat = queue_state.worker_state() if redis_ok else None
+    worker_ok = bool(running or heartbeat)
     if redis_ok and not worker_ok:
+        # Fallback for workers that don't send heartbeats (older versions).
         try:
             replies = await run_in_threadpool(celery_app.control.ping, timeout=1.0)
             worker_ok = bool(replies)
@@ -77,5 +79,6 @@ async def system_status():
         "version": VERSION,
         "redis": redis_ok,
         "worker": worker_ok,
+        "worker_starting": heartbeat == "starting",
         "busy": bool(running),
     }

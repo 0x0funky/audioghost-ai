@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from celery.exceptions import Ignore
-from celery.signals import worker_ready
+from celery.signals import worker_init, worker_ready, worker_shutdown
 
 from settings import OUTPUT_DIR, read_hf_token
 from workers import queue_state
@@ -70,6 +70,37 @@ def _get_model(model_size: str, variant: str, use_float32: bool, token, progress
         return lite
 
 
+_HEARTBEAT_INTERVAL_SECONDS = 15
+_heartbeat_stop = threading.Event()
+_worker_state = {"value": "starting"}
+
+
+def _heartbeat_loop() -> None:
+    """
+    Tell the API this worker is alive. A ``--pool=solo`` worker can't answer
+    Celery pings while a job runs, and the warm-up imports hold the GIL long
+    enough to miss them too; this thread keeps a Redis key fresh instead.
+    """
+    while True:
+        queue_state.worker_heartbeat(_worker_state["value"])
+        if _heartbeat_stop.wait(_HEARTBEAT_INTERVAL_SECONDS):
+            return
+
+
+@worker_init.connect
+def _start_heartbeat(**_kwargs):
+    # As early as possible: the worker needs ~20 s more to connect and warm up,
+    # and the UI should say "starting" rather than "not running" meanwhile.
+    _heartbeat_stop.clear()
+    threading.Thread(target=_heartbeat_loop, name="audioghost-heartbeat", daemon=True).start()
+
+
+@worker_shutdown.connect
+def _stop_heartbeat(**_kwargs):
+    _heartbeat_stop.set()
+    queue_state.worker_gone()
+
+
 @worker_ready.connect
 def _warm_up(**_kwargs):
     """
@@ -87,6 +118,8 @@ def _warm_up(**_kwargs):
             import sam_audio  # noqa: F401
 
             logger.info("Warm-up: SAM-Audio libraries imported")
+            _worker_state["value"] = "ready"
+            queue_state.worker_heartbeat("ready")
             preload = os.environ.get("AUDIOGHOST_PRELOAD_MODEL", "").strip().lower()
             token = read_hf_token()
             if preload in sam_lite.MODEL_SIZES and token:
@@ -94,6 +127,10 @@ def _warm_up(**_kwargs):
                 logger.info("Warm-up: preloaded sam-audio-%s", preload)
         except Exception as err:  # noqa: BLE001 - warm-up is best effort
             logger.warning("Warm-up skipped: %s", err)
+        finally:
+            if _worker_state["value"] != "ready":
+                _worker_state["value"] = "ready"
+                queue_state.worker_heartbeat("ready")
 
     threading.Thread(target=run, name="audioghost-warmup", daemon=True).start()
 

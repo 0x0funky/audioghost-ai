@@ -3,6 +3,8 @@ Small Redis-backed bookkeeping shared by the API and the worker:
 
 * queue order, so waiting users can see how many jobs are ahead of them,
 * which task is running (the solo-pool worker can't answer pings while busy),
+* a worker heartbeat, refreshed by a background thread, so the UI knows the
+  worker is alive while warm-up or a job keeps it from answering pings,
 * cooperative cancellation flags (``revoke(terminate=True)`` does nothing to a
   task that is already running in a ``--pool=solo`` worker).
 
@@ -20,8 +22,12 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "audioghost:queue"
 RUNNING_KEY = "audioghost:running"
 CANCEL_PREFIX = "audioghost:cancel:"
+HEARTBEAT_KEY = "audioghost:worker"
 RUNNING_TTL_SECONDS = 3600
 CANCEL_TTL_SECONDS = 3600
+#: The worker refreshes its heartbeat every 15 s; a worker that died is noticed
+#: within a minute.
+HEARTBEAT_TTL_SECONDS = 60
 
 _client = None
 
@@ -67,6 +73,30 @@ def mark_finished(task_id: str) -> None:
         client.delete(CANCEL_PREFIX + task_id)
     except Exception as err:  # noqa: BLE001
         logger.debug("finish bookkeeping failed: %s", err)
+
+
+def worker_heartbeat(state: str) -> None:
+    """Record that a worker is alive: "starting" during warm-up, then "ready"."""
+    try:
+        _redis().set(HEARTBEAT_KEY, state, ex=HEARTBEAT_TTL_SECONDS)
+    except Exception as err:  # noqa: BLE001
+        logger.debug("heartbeat failed: %s", err)
+
+
+def worker_gone() -> None:
+    try:
+        _redis().delete(HEARTBEAT_KEY)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def worker_state() -> Optional[str]:
+    """"starting", "ready", or None if no worker sent a heartbeat recently."""
+    try:
+        value = _redis().get(HEARTBEAT_KEY)
+        return value.decode() if value else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def running_task() -> Optional[str]:

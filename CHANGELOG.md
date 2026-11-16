@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.1.1 - 2026-11
+
+### Fixed
+- The "separation worker is not running yet" warning showed up although the
+  worker was fine: right after start-up (the worker is busy importing its
+  libraries for ~20 s) and right after pressing Extract (a `--pool=solo`
+  worker can't answer pings while it runs a job), and it then stayed on screen.
+  The worker now sends a heartbeat from a background thread, and the page
+  re-checks every few seconds while something looks wrong and treats a job
+  that makes progress as proof that everything is up.
+
 ## v1.1.0 - 2026-11
 
 A performance, correctness and install-reliability release. Same SAM-Audio
