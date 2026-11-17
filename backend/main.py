@@ -8,19 +8,22 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from api import auth, separate, tasks
+from api import auth, separate, sessions, tasks
 from settings import FRONTEND_ORIGIN_REGEX, FRONTEND_ORIGINS, OUTPUT_DIR, RETENTION_HOURS
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    import sessions as session_store
     from workers.tasks import cleanup_old_files
 
     removed = await run_in_threadpool(cleanup_old_files, RETENTION_HOURS)
-    if removed:
-        print(f"[AudioGhost] Removed {removed} files older than {RETENTION_HOURS:g}h")
+    removed_sessions = await run_in_threadpool(session_store.cleanup, RETENTION_HOURS)
+    if removed or removed_sessions:
+        print(f"[AudioGhost] Removed {removed} files and {removed_sessions} sessions "
+              f"older than {RETENTION_HOURS:g}h")
     yield
 
 
@@ -38,6 +41,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # Direct file access (kept for backwards compatibility)
@@ -46,6 +50,7 @@ app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(separate.router, prefix="/api/separate", tags=["Separation"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
+app.include_router(sessions.router, prefix="/api/sessions", tags=["Sessions"])
 
 
 @app.get("/")
@@ -66,7 +71,8 @@ async def system_status():
 
     redis_ok = await run_in_threadpool(queue_state.redis_ok)
     running = queue_state.running_task() if redis_ok else None
-    heartbeat = queue_state.worker_state() if redis_ok else None
+    info = (queue_state.worker_info() or {}) if redis_ok else {}
+    heartbeat = info.get("state")
     worker_ok = bool(running or heartbeat)
     if redis_ok and not worker_ok:
         # Fallback for workers that don't send heartbeats (older versions).
@@ -81,4 +87,7 @@ async def system_status():
         "worker": worker_ok,
         "worker_starting": heartbeat == "starting",
         "busy": bool(running),
+        # From the worker's heartbeat: device, GPU name, memory, loaded model.
+        "device": {k: info[k] for k in ("device", "gpu", "vram_total_gb", "vram_used_gb", "model")
+                   if k in info} or None,
     }

@@ -1,0 +1,134 @@
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  display: block;
+  margin-bottom: 8px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.option,
+.format {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+}
+
+.option {
+  flex-direction: column;
+}
+
+label.option {
+  flex-direction: row;
+}
+
+.option[data-checked="true"],
+.format[data-checked="true"] {
+  border-color: var(--accent-strong);
+  background: var(--accent-softer);
+}
+
+.option[data-disabled="true"] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.optionLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.option input[type="radio"],
+.format input[type="radio"],
+.optionLabel input[type="radio"] {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--accent-strong);
+}
+
+.optionText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.optionTitle {
+  font-weight: 600;
+}
+
+.optionHint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-left: 30px;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent-strong);
+}
+
+.formats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.format {
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.fileName {
+  display: flex;
+  flex-direction: column;
+}
+
+.code {
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  background: var(--surface-1);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+@media (max-width: 520px) {
+  .formats {
+    grid-template-columns: 1fr;
+  }
+}

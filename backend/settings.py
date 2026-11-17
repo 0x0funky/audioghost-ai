@@ -34,7 +34,10 @@ FRONTEND_ORIGIN_REGEX = os.environ.get(
     "AUDIOGHOST_FRONTEND_ORIGIN_REGEX", r"^http://(localhost|127\.0\.0\.1):30\d{2}$"
 )
 
-for _directory in (UPLOAD_DIR, OUTPUT_DIR):
+#: Sessions (an upload, its separated tracks and what is left), one folder each.
+SESSION_DIR = Path(os.environ.get("AUDIOGHOST_SESSION_DIR", OUTPUT_DIR / "sessions"))
+
+for _directory in (UPLOAD_DIR, OUTPUT_DIR, SESSION_DIR):
     _directory.mkdir(parents=True, exist_ok=True)
 
 

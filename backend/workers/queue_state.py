@@ -11,6 +11,8 @@ Small Redis-backed bookkeeping shared by the API and the worker:
 Every helper fails soft: if Redis is unreachable, the app still works, it just
 loses these extras.
 """
+import contextlib
+import json
 import logging
 import time
 from typing import Optional
@@ -22,6 +24,7 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "audioghost:queue"
 RUNNING_KEY = "audioghost:running"
 CANCEL_PREFIX = "audioghost:cancel:"
+LOCK_PREFIX = "audioghost:lock:"
 HEARTBEAT_KEY = "audioghost:worker"
 RUNNING_TTL_SECONDS = 3600
 CANCEL_TTL_SECONDS = 3600
@@ -75,12 +78,37 @@ def mark_finished(task_id: str) -> None:
         logger.debug("finish bookkeeping failed: %s", err)
 
 
-def worker_heartbeat(state: str) -> None:
-    """Record that a worker is alive: "starting" during warm-up, then "ready"."""
+def worker_heartbeat(state: str, info: Optional[dict] = None) -> None:
+    """
+    Record that a worker is alive: "starting" during warm-up, then "ready".
+    ``info`` (GPU name, memory, loaded model) is shown in the UI's status chip.
+    """
     try:
-        _redis().set(HEARTBEAT_KEY, state, ex=HEARTBEAT_TTL_SECONDS)
+        payload = json.dumps({"state": state, **(info or {})})
+        _redis().set(HEARTBEAT_KEY, payload, ex=HEARTBEAT_TTL_SECONDS)
     except Exception as err:  # noqa: BLE001
         logger.debug("heartbeat failed: %s", err)
+
+
+def _heartbeat() -> Optional[dict]:
+    try:
+        value = _redis().get(HEARTBEAT_KEY)
+    except Exception:  # noqa: BLE001
+        return None
+    if not value:
+        return None
+    text = value.decode(errors="replace")
+    if not text.startswith("{"):
+        return {"state": text}  # v1.1.1 workers send a bare state
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
+
+
+def worker_info() -> Optional[dict]:
+    """The worker's last heartbeat (state plus whatever info it sent), or None."""
+    return _heartbeat()
 
 
 def worker_gone() -> None:
@@ -92,11 +120,41 @@ def worker_gone() -> None:
 
 def worker_state() -> Optional[str]:
     """"starting", "ready", or None if no worker sent a heartbeat recently."""
+    beat = _heartbeat()
+    return beat.get("state") if beat else None
+
+
+@contextlib.contextmanager
+def redis_lock(name: str, timeout: float = 30.0):
+    """
+    A lock shared by the API and the worker (both edit session files).
+    Degrades to no lock if Redis is unavailable rather than failing the call.
+    """
+    lock = None
     try:
-        value = _redis().get(HEARTBEAT_KEY)
-        return value.decode() if value else None
+        lock = _redis().lock(LOCK_PREFIX + name, timeout=timeout, blocking_timeout=timeout)
+        if not lock.acquire():
+            logger.warning("Could not lock %s within %.0f s; going ahead without it", name, timeout)
+            lock = None
+    except Exception as err:  # noqa: BLE001
+        logger.debug("lock %s unavailable: %s", name, err)
+        lock = None
+    try:
+        yield
+    finally:
+        if lock is not None:
+            try:
+                lock.release()
+            except Exception:  # noqa: BLE001 - expired locks raise on release
+                pass
+
+
+def clear_running() -> None:
+    """Forget the running job (a worker that just started is running nothing)."""
+    try:
+        _redis().delete(RUNNING_KEY)
     except Exception:  # noqa: BLE001
-        return None
+        pass
 
 
 def running_task() -> Optional[str]:

@@ -5,7 +5,7 @@ title AudioGhost AI - Launcher
 echo.
 echo ╔══════════════════════════════════════════════════════════════╗
 echo ║              AudioGhost AI - Launcher                        ║
-echo ║                        v1.1                                  ║
+echo ║                        v1.2                                  ║
 echo ╚══════════════════════════════════════════════════════════════╝
 echo.
 

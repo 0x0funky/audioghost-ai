@@ -12,7 +12,7 @@ mkdir -p "$RUN_DIR" "$LOG_DIR"
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║              AudioGhost AI - Launcher (v1.1)                 ║"
+echo "║              AudioGhost AI - Launcher (v1.2)                 ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
