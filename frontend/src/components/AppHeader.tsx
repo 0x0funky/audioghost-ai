@@ -1,6 +1,7 @@
 "use client";
 
 import { Clock, FileAudio, Film, Moon, Sun } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { formatTime } from "@/lib/format";
 import { applyTheme, currentTheme, subscribeTheme } from "@/lib/prefs";
@@ -8,16 +9,17 @@ import type { AuthStatus, Session, SystemStatus } from "@/lib/types";
 import styles from "./AppHeader.module.css";
 import { Button, IconButton } from "./ui";
 
-export function Logo({ size = 28 }: { size?: number }) {
+/** The AudioGhost logo (the original app icon). */
+export function Logo({ size = 36 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M12 2a7 7 0 0 0-7 7v12l2.33-1.75L9.67 21 12 19.25 14.33 21l2.34-1.75L19 21V9a7 7 0 0 0-7-7z"
-        fill="var(--accent)"
-      />
-      <circle cx="9.5" cy="10" r="1.4" fill="#ECEEF2" />
-      <circle cx="14.5" cy="10" r="1.4" fill="#ECEEF2" />
-    </svg>
+    <Image
+      src="/audioghost_logo.png"
+      width={size}
+      height={size}
+      alt=""
+      priority
+      style={{ borderRadius: Math.round(size / 4), display: "block" }}
+    />
   );
 }
 
@@ -171,7 +173,9 @@ export function AppHeader({
     <header className={styles.header}>
       <button type="button" className={styles.brand} onClick={onHome} aria-label="AudioGhost home">
         <Logo />
-        <span className={styles.wordmark}>AudioGhost</span>
+        <span className={styles.wordmark}>
+          Audio<span className={styles.ghost}>Ghost</span>
+        </span>
       </button>
       {source && (
         <div className={styles.fileChip}>

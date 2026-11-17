@@ -28,6 +28,14 @@
   letter-spacing: -0.01em;
 }
 
+/* The original AudioGhost wordmark: "Ghost" in the logo's violet, cyan and pink. */
+.ghost {
+  background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 50%, #f472b6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 .fileChip {
   display: flex;
   align-items: center;
