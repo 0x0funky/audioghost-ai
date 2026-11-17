@@ -30,6 +30,8 @@ export interface Track {
   finished_at: number | null;
   audio_url: string | null;
   peaks_url: string | null;
+  /** The model's own "everything but this sound" (played when only this track is changed). */
+  without_url?: string | null;
   jobs_ahead: number | null;
 }
 

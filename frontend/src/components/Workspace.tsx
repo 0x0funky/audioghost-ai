@@ -4,6 +4,7 @@ import { Ban, Crosshair, Download, Pause, Play, Repeat, SkipBack, X, ZoomIn, Zoo
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { api, apiUrl, downloadExport } from "@/lib/api";
 import { formatDb, formatDuration, formatTime, sliderToGain } from "@/lib/format";
+import { playPlan, withoutKey } from "@/lib/mix";
 import { MultiTrackPlayer } from "@/lib/player";
 import { DEFAULT_SETTINGS, loadPref, savePref } from "@/lib/prefs";
 import type {
@@ -161,16 +162,16 @@ export function Workspace({
     mixGains[key] = ch.muted || (anySolo && !ch.solo) ? 0 : sliderToGain(ch.volume);
   }
 
-  // What the player should play.
+  // Every source stays loaded and in sync; the gains pick which ones you hear (see playPlan).
   const sources = [
     { key: "original", url: apiUrl(source.audio_url) },
     ...done.filter((t) => t.audio_url).map((t) => ({ key: t.id, url: apiUrl(t.audio_url!) })),
+    ...done.filter((t) => t.without_url).map((t) => ({ key: withoutKey(t.id), url: apiUrl(t.without_url!) })),
     ...(session.rest ? [{ key: "rest", url: apiUrl(session.rest.audio_url) }] : []),
   ];
   // Effects key on these strings, so a re-render with the same sources/gains is a no-op.
   const sourcesKey = JSON.stringify(sources);
-  const playGains: Record<string, number> =
-    holdOriginal || done.length === 0 ? { original: 1 } : { ...mixGains, original: 0 };
+  const playGains = playPlan(done, session.rest !== null, mixGains, holdOriginal);
   const gainsKey = JSON.stringify(playGains);
 
   useEffect(() => {

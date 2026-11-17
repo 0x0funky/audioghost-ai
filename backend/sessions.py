@@ -7,15 +7,20 @@ Each session is a folder in SESSION_DIR:
     source.<ext>            the upload as-is (videos: used for preview/export)
     original.wav            its audio at 48 kHz, mono or stereo
     t<id>.wav               one per separated sound (32-bit float)
-    rest.<rev>.wav          original minus every finished track
+    t<id>.without.wav       the model's own "everything but this sound"
+    rest.<rev>.wav          "everything else": every finished sound removed
     *.peaks.json            waveform overviews for the UI
     exports/                files built for downloads
 
-"Everything else" is derived by subtraction rather than taken from the model's
-own residual, so all tracks played at 0 dB add up to the original exactly
-(muting a track removes exactly what was extracted). Files are never rewritten
-in place, only replaced by new names, so a browser streaming one is never cut
-off (and Windows never refuses a replace because the file is open).
+Everything played back is model output. SAM-Audio regenerates what it
+separates, so its output does not line up with the original sample for sample,
+and subtracting it leaves most of the sound in place. Instead "everything else"
+is a chain: each new sound is removed by the model from what the earlier ones
+left. Playback picks the best source for the mix (``mix_plan``): the original
+when nothing is changed, the model's "without" when one sound is changed, the
+chain plus the tracks otherwise. Files are never rewritten in place, only
+replaced by new names, so a browser streaming one is never cut off (and Windows
+never refuses a replace because the file is open).
 
 Audio math streams through the files in blocks, so hour-long recordings don't
 need gigabytes of RAM.
@@ -56,7 +61,8 @@ _TRACK_ID = re.compile(r"^t[0-9a-f]{8}$")
 #: Files the API may serve from a session folder.
 SERVABLE = re.compile(
     r"^(original\.wav|original\.peaks\.json|source\.[a-z0-9]{1,5}"
-    r"|t[0-9a-f]{8}\.wav|t[0-9a-f]{8}\.peaks\.json|rest\.\d+\.wav|rest\.\d+\.peaks\.json)$"
+    r"|t[0-9a-f]{8}\.wav|t[0-9a-f]{8}\.without\.wav|t[0-9a-f]{8}\.peaks\.json"
+    r"|rest\.\d+\.wav|rest\.\d+\.peaks\.json)$"
 )
 
 
@@ -502,12 +508,15 @@ def _match_stereo_image(original: Path, wav):
     return torch.from_numpy(np.stack([gains[0] * mono, gains[1] * mono]).astype(np.float32))
 
 
-def finish_track(sid: str, tid: str, wav, sample_rate: int, elapsed: float) -> bool:
+def finish_track(sid: str, tid: str, target, without, rest, sample_rate: int, elapsed: float,
+                 chain_from: Optional[dict] = None) -> bool:
     """
-    Store a separated sound. The track turns "done" in the same write that
-    publishes the matching "everything else", so the UI never sees one without
-    the other. Returns False if the track was removed meanwhile (its audio is
-    then thrown away).
+    Store a separated sound: the track, the model's own "without this sound" and
+    the new "everything else" (``rest``: the chain step's output). The track turns
+    "done" in the same write that publishes the new "everything else", so the UI
+    never sees one without the other. ``chain_from`` is the "everything else" the
+    chain step started from: tracks removed from it meanwhile are put back, as a
+    removal does. Returns False if the track was removed meanwhile.
     """
     from workers import audio_io
 
@@ -515,96 +524,119 @@ def finish_track(sid: str, tid: str, wav, sample_rate: int, elapsed: float) -> b
     data = load(sid)
     if find_track(data, tid) is None:
         return False
-    if data["source"]["channels"] == 2 and wav.shape[0] == 1:
-        wav = _match_stereo_image(folder / "original.wav", wav)
+    if data["source"]["channels"] == 2 and target.shape[0] == 1:
+        target = _match_stereo_image(folder / "original.wav", target)
     path = folder / f"{tid}.wav"
-    audio_io.save_audio(path, wav, sample_rate)
-    write_peaks(path, folder / f"{tid}.peaks.json")
-    fields = dict(status="done", progress=1.0, message="", file=path.name,
+    peaks = folder / f"{tid}.peaks.json"
+    without_path = folder / f"{tid}.without.wav"
+    build = folder / f"rest-build-{uuid.uuid4().hex[:8]}.wav"
+    audio_io.save_audio(path, target, sample_rate)
+    write_peaks(path, peaks)
+    audio_io.save_audio(without_path, without, sample_rate)
+    audio_io.save_audio(build, rest, sample_rate)
+    fields = dict(status="done", progress=1.0, message="", file=path.name, without=without_path.name,
                   elapsed=round(elapsed, 2), finished_at=time.time())
-    if not rebuild_rest(sid, finishing=(tid, fields)):
-        _remove(path)
-        _remove(folder / f"{tid}.peaks.json")
-        return False
+    frames, channels = data["source"]["frames"], data["source"]["channels"]
+
+    def discard(*extra):
+        for p in (path, peaks, without_path) + extra:
+            _remove(p)
+
+    with queue_state.redis_lock(f"rest:{sid}", timeout=REST_LOCK_SECONDS):
+        current = load(sid)
+        if find_track(current, tid) is None:
+            discard(build)
+            return False
+        now = current.get("rest") or {}
+        removed = [k for k in (chain_from or {}).get("tracks", []) if k not in now.get("tracks", [])]
+        put_back = [folder / f"{k}.deleted.wav" for k in removed if (folder / f"{k}.deleted.wav").is_file()]
+        if put_back:
+            merged = folder / f"rest-build-{uuid.uuid4().hex[:8]}.wav"
+            _combine(merged, [(build, 1.0)] + [(p, 1.0) for p in put_back], frames, channels)
+            _remove(build)
+            build = merged
+        write_peaks(build, build.with_suffix(".peaks.json"))
+        state = {}
+
+        def change(d):
+            track = find_track(d, tid)
+            if track is None:
+                state["gone"] = True
+                return
+            prev = d.get("rest")
+            rev = (prev or {}).get("rev", 0) + 1
+            _replace(build, folder / f"rest.{rev}.wav")
+            _replace(build.with_suffix(".peaks.json"), folder / f"rest.{rev}.peaks.json")
+            kept = [k for k in (prev or {}).get("tracks", []) if find_track(d, k) is not None]
+            d["rest"] = {"rev": rev, "file": f"rest.{rev}.wav", "tracks": kept + [tid]}
+            state["old"] = prev
+            track.update(fields)
+
+        update(sid, change)
+        if state.get("gone"):
+            discard(build, build.with_suffix(".peaks.json"))
+            return False
+        old = state.get("old")
+        if old:
+            _remove(folder / old["file"])
+            _remove(folder / old["file"].replace(".wav", ".peaks.json"))
     return True
 
 
-def _rest_inputs(data: dict, finishing: Optional[tuple]) -> List[tuple]:
-    """``(track id, file)`` of every finished track, plus the one being finished."""
-    inputs = []
-    for track in data["tracks"]:
-        if finishing and track["id"] == finishing[0]:
-            inputs.append((track["id"], finishing[1]["file"]))
-        elif track["status"] == "done" and track.get("file"):
-            inputs.append((track["id"], track["file"]))
-    return inputs
-
-
-def rebuild_rest(sid: str, finishing: Optional[tuple] = None) -> bool:
+def remove_done_track(sid: str, tid: str) -> None:
     """
-    ``rest = original - sum(finished tracks)``, published under a new revision.
-    ``finishing = (track id, fields)`` counts that track as finished and applies
-    ``fields`` to it in the same update. Returns False if that track is gone.
-
-    Runs under the session's rest lock (track removals take it too). If the lock
-    is unavailable and the tracks change while the rest is computed, it is
-    computed again, so the published rest matches the published tracks. The
-    revision number is picked under the session lock, so two rebuilds never
-    write the same file.
+    Remove a finished track. Its sound goes back into "everything else" (fast
+    approximation: everything else + the track). With no finished tracks left
+    there is no "everything else" any more.
     """
     folder = session_dir(sid)
-    attempts = 5
     with queue_state.redis_lock(f"rest:{sid}", timeout=REST_LOCK_SECONDS):
-        for attempt in range(attempts):
-            last = attempt == attempts - 1
-            data = load(sid)
-            if finishing and find_track(data, finishing[0]) is None:
-                return False
-            inputs = _rest_inputs(data, finishing)
-            ids = [tid for tid, _ in inputs]
-            if not last and any(not (folder / name).is_file() for _, name in inputs):
-                continue  # removed meanwhile: read the tracks again
-            build = None
-            if inputs:
-                build = folder / f"rest-build-{uuid.uuid4().hex[:8]}.wav"
-                sources = [(folder / "original.wav", 1.0)] + [(folder / name, -1.0) for _, name in inputs]
-                _combine(build, sources, data["source"]["frames"], data["source"]["channels"])
-                write_peaks(build, build.with_suffix(".peaks.json"))
-            state = {"result": "ok", "old": None, "new": None}
+        data = load(sid)
+        track = find_track(data, tid)
+        if track is None:
+            return
+        rest = data.get("rest")
+        others = [t for t in data["tracks"] if t["id"] != tid and t["status"] == "done"]
+        busy = any(t["status"] in ACTIVE for t in data["tracks"])
+        new = None
+        if rest and others:
+            new = dict(rest)
+            if tid in rest.get("tracks", []) and track.get("file"):
+                rev = rest["rev"] + 1
+                out = folder / f"rest.{rev}.wav"
+                _combine(out, [(folder / rest["file"], 1.0), (folder / track["file"], 1.0)],
+                         data["source"]["frames"], data["source"]["channels"])
+                write_peaks(out, folder / f"rest.{rev}.peaks.json")
+                new = {"rev": rev, "file": out.name, "tracks": [k for k in rest["tracks"] if k != tid]}
 
-            def change(d, build=build, ids=ids, last=last):
-                if finishing and find_track(d, finishing[0]) is None:
-                    state["result"] = "gone"
-                    return
-                if not last and [tid for tid, _ in _rest_inputs(d, finishing)] != ids:
-                    state["result"] = "stale"
-                    return
-                state["old"] = d.get("rest")
-                new = None
-                if build is not None:
-                    rev = (d.get("rest") or {}).get("rev", 0) + 1
-                    _replace(build, folder / f"rest.{rev}.wav")
-                    _replace(build.with_suffix(".peaks.json"), folder / f"rest.{rev}.peaks.json")
-                    new = {"rev": rev, "file": f"rest.{rev}.wav", "tracks": ids}
-                d["rest"] = new
-                state["new"] = new
-                if finishing:
-                    find_track(d, finishing[0]).update(finishing[1])
+        def change(d):
+            d["tracks"] = [t for t in d["tracks"] if t["id"] != tid]
+            d["rest"] = new
 
-            update(sid, change)
-            if state["result"] != "ok":
-                if build is not None:
-                    _remove(build)
-                    _remove(build.with_suffix(".peaks.json"))
-                if state["result"] == "gone":
-                    return False
-                continue
-            old, new = state["old"], state["new"]
-            if old and old["file"] != (new or {}).get("file"):
-                _remove(folder / old["file"])
-                _remove(folder / old["file"].replace(".wav", ".peaks.json"))
-            return True
-    return False  # not reached: the last attempt always publishes
+        update(sid, change)
+        if rest and (new is None or new["file"] != rest["file"]):
+            _remove(folder / rest["file"])
+            _remove(folder / rest["file"].replace(".wav", ".peaks.json"))
+        target = folder / f"{tid}.wav"
+        if busy and target.is_file():
+            _replace(target, folder / f"{tid}.deleted.wav")  # a running chain step puts it back
+        else:
+            _remove(target)
+        _remove(folder / f"{tid}.without.wav")
+        _remove(folder / f"{tid}.peaks.json")
+
+
+def purge_deleted(sid: str) -> None:
+    """Drop audio kept for chain steps once nothing is queued or running."""
+    folder = session_dir(sid)
+    try:
+        data = load(sid)
+    except SessionNotFound:
+        return
+    if any(t["status"] in ACTIVE for t in data["tracks"]):
+        return
+    for leftover in list(folder.glob("t*.deleted.wav")) + list(folder.glob("rest-build-*")):
+        _remove(leftover)
 
 
 # --------------------------------------------------------------------------- #
@@ -612,18 +644,38 @@ def rebuild_rest(sid: str, finishing: Optional[tuple] = None) -> bool:
 # --------------------------------------------------------------------------- #
 
 
-def mix_sources(data: dict, gains: Dict[str, float]) -> List[tuple]:
-    """``(path, gain)`` pairs for the audible parts of a mix."""
+def _unity(value: float) -> bool:
+    return abs(value - 1.0) < 1e-3
+
+
+def mix_plan(data: dict, gains: Dict[str, float]) -> List[tuple]:
+    """
+    ``(path, gain)`` pairs for a mix (gains: linear, per track id and ``"rest"``;
+    muted or soloed-out = 0). Only model output is played, so the source depends
+    on what changed:
+
+    * nothing changed: the original itself
+    * one track changed: the model's own "without that sound" + the track at its gain
+    * more: "everything else" (the chain) + every track at its gain
+    """
     folder = session_dir(data["id"])
-    sources = []
-    for track in data["tracks"]:
-        gain = float(gains.get(track["id"], 0.0))
-        if track["status"] == "done" and track.get("file") and gain > 0:
-            sources.append((folder / track["file"], min(gain, MAX_GAIN)))
-    rest_gain = float(gains.get("rest", 0.0))
-    if data.get("rest") and rest_gain > 0:
-        sources.append((folder / data["rest"]["file"], min(rest_gain, MAX_GAIN)))
-    return sources
+    done = [t for t in data["tracks"] if t["status"] == "done" and t.get("file")]
+    rest = data.get("rest")
+    if not done or not rest:
+        return [(folder / "original.wav", 1.0)]
+    g = {t["id"]: min(max(0.0, float(gains.get(t["id"], 0.0))), MAX_GAIN) for t in done}
+    g_rest = min(max(0.0, float(gains.get("rest", 0.0))), MAX_GAIN)
+    changed = [t for t in done if not _unity(g[t["id"]])]
+    if not changed and _unity(g_rest):
+        return [(folder / "original.wav", 1.0)]
+    if len(changed) == 1 and _unity(g_rest) and changed[0].get("without"):
+        track = changed[0]
+        plan = [(folder / track["without"], 1.0)]
+        if g[track["id"]] > 0:
+            plan.append((folder / track["file"], g[track["id"]]))
+        return plan
+    plan = [(folder / rest["file"], g_rest)] if g_rest > 0 else []
+    return plan + [(folder / t["file"], g[t["id"]]) for t in done if g[t["id"]] > 0]
 
 
 def mix_label(data: dict, gains: Dict[str, float]) -> str:
@@ -672,7 +724,7 @@ def export_mix(sid: str, gains: Dict[str, float], fmt: str) -> tuple:
     from workers import audio_io
 
     data = load(sid)
-    sources = mix_sources(data, gains)
+    sources = mix_plan(data, gains)
     if not sources:
         raise ValueError("Nothing to export: every track is muted.")
     out = _exports_dir(sid)
@@ -725,7 +777,7 @@ def export_video(sid: str, gains: Dict[str, float]) -> tuple:
     data = load(sid)
     if not data["source"]["is_video"]:
         raise ValueError("This session's source is not a video.")
-    sources = mix_sources(data, gains)
+    sources = mix_plan(data, gains)
     if not sources:
         raise ValueError("Nothing to export: every track is muted.")
     folder = session_dir(sid)

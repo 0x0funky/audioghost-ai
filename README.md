@@ -13,12 +13,12 @@ Describe the sounds you want (vocals, a dog barking, traffic) and AudioGhost put
 | | |
 |---|---|
 | 🎼 **Several sounds, one run** | Type `speech`, `background music`, `drums`... and each sound lands on its own track. An **Everything else** track holds what is left |
-| 🎚️ **A mixer** | Volume, mute and solo per track, plus *hold to hear the original*. All tracks at 0 dB add up to the original exactly, so muting a track removes exactly that sound |
+| 🎚️ **A mixer** | Volume, mute and solo per track, plus *hold to hear the original*. Everything you hear is SAM-Audio's own output: mute one track and you get the model's own mix without that sound |
 | 💾 **Export what you hear** | One mixed file, single tracks as a ZIP, or your video with the new soundtrack: 24-bit WAV, FLAC or MP3, named like `song [no vocals].wav` |
 | 🕒 **Mark where a sound is, or isn't** | Drag on the timeline: *Sound is here* or *Not here*, per sound |
 | 🔄 **Nothing gets lost** | Sessions survive page reloads and restarts; recent work stays one click away for 24 hours |
 | 🧭 **A new interface** | One workspace instead of a long form, system status in the top bar, dark and light themes, keyboard friendly ([screenshots](#-demo)) |
-| ⚡ **Extra sounds cost less** | "Everything else" is computed instead of decoded: about 5 s per sound for a 30 s clip (Base, Balanced, RTX 4090) |
+| 🔗 **Everything else, made by the model** | Each new sound is removed from what the earlier ones left, so *Everything else* is real model output that still sounds like your recording (24 s stereo café recording: 9 s for the first sound, 14 s for each one after it; Large, Balanced, RTX 4090) |
 | 🩹 **v1.1.1** | No more false "worker is not running" warning |
 
 v1.1 made separation 4–6× faster, fixed the installers and added macOS & Linux. Full list in the [CHANGELOG](CHANGELOG.md).
@@ -43,7 +43,7 @@ v1.1 made separation 4–6× faster, fixed the installers and added macOS & Linu
 - 🕒 **Temporal Lock** - mark where a sound is (or isn't) audible to point the model at the right source
 - 🚀 **Consumer GPUs** - Small runs in ~4.2 GB of VRAM; long files are processed in crossfaded chunks
 - ⚡ **Speed / Quality presets** - Fast (8 steps), Balanced (16, Meta's default), High (32)
-- 🎧 **Stereo** - optional per-channel separation that keeps the stereo image
+- 🎧 **Stereo** - per-channel separation that keeps the stereo image (on by default for stereo files)
 - 💾 **Exports** - 24-bit WAV, FLAC, MP3 or a ZIP of single tracks, with readable names
 - 🔄 **Sessions** - your work survives reloads and restarts (kept for 24 hours)
 
@@ -235,9 +235,9 @@ Navigate to `http://localhost:3000`
 3. Optional:
    - **Mark where a sound is**: select a new sound in the panel, then drag across the timeline with *Sound is here* or *Not here* (or use *Mark at playhead*). It's a hint; the whole file is still processed
    - **Model** and **Quality**: Small / Fast for drafts, Large / High for final exports
-   - **Advanced**: keep stereo, Meta's precision (`-tv`) checkpoints, full FP32, max chunk length
+   - **Advanced**: stereo (on for stereo files; off is about twice as fast but mono), Meta's precision (`-tv`) checkpoints, full FP32, max chunk length
 4. Click **Separate**. Tracks appear as they finish, so you can listen to one while the next is running. Cancel a track with its ✕.
-5. **Mix**: S (solo), M (mute) and a volume slider per track, *Hold to hear the original* to compare, Space to play and pause. **Everything else** is the original minus every track, so all tracks at 0 dB give you back the original.
+5. **Mix**: S (solo), M (mute) and a volume slider per track, *Hold to hear the original* to compare, Space to play and pause. What you hear is always model output, picked by what you changed: everything at 0 dB plays the original; one track changed plays the model's own "without that sound" plus the track at your level; more changes play **Everything else** (the model removes each sound in turn from what the previous ones left) plus every track. Removing a finished track puts its sound back into Everything else.
 6. **Export** what you hear as one file, single tracks as a ZIP, or (for videos) the video with your mix.
 
 ### Command line
@@ -286,7 +286,7 @@ Interactive docs: `http://localhost:8000/docs`
     { "text": "background music", "anchors": [["+", 12.0, 18.5], ["-", 40.0, 44.0]] }
   ],
   "model_size": "base", "quality": "balanced", "variant": "default",
-  "stereo": false, "use_float32": false, "chunk_duration": 25
+  "stereo": true, "use_float32": false, "chunk_duration": 25
 }
 ```
 

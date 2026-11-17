@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS: SeparationSettings = {
   model_size: "base",
   quality: "balanced",
   variant: "default",
-  stereo: false,
+  stereo: true,
   use_float32: false,
   chunk_duration: 25,
 };

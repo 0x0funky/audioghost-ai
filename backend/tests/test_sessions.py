@@ -53,8 +53,17 @@ def read(path):
     return data
 
 
-def finish(session, tid, mono_signal):
-    sessions.finish_track(session["id"], tid, torch.from_numpy(mono_signal[None, :]), SR, elapsed=1.0)
+def as_audio(x):
+    x = np.asarray(x, dtype=np.float32)
+    return torch.from_numpy(x[None, :] if x.ndim == 1 else x)
+
+
+def finish(session, tid, target, without, rest, chain_from="current"):
+    """Finish a track with given model outputs; the chain starts from the current rest by default."""
+    sid = session["id"]
+    if chain_from == "current":
+        chain_from = sessions.load(sid).get("rest")
+    return sessions.finish_track(sid, tid, as_audio(target), as_audio(without), as_audio(rest), SR, 1.0, chain_from)
 
 
 def test_create_decodes_and_writes_overview(store):
@@ -69,46 +78,65 @@ def test_create_decodes_and_writes_overview(store):
     assert 0.3 < max(peaks["peaks"]) <= 1.0
 
 
-def test_rest_is_original_minus_tracks_mono_track_on_stereo_source(store):
-    session, (a, b, c) = make_session(store)  # left = a + b + c, right = half of that
+def test_finish_publishes_track_without_and_chain(store):
+    session, (a, b, c) = make_session(store, channels=1)
     sid = session["id"]
-    ids = sessions.add_tracks(sid, [{"text": "low tone"}, {"text": "mid tone"}], {"model_size": "small"}, "job-1")
-    # Mono separation sees the downmix (left + right) / 2 = 0.75 * (a + b + c).
-    finish(session, ids[0], 0.75 * a)
-    finish(session, ids[1], 0.75 * b)
+    folder = sessions.session_dir(sid)
+    ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}], {}, "job-1")
+    assert finish(session, ids[0], a, b + c, b + c)
+    data = sessions.load(sid)
+    assert data["rest"]["rev"] == 1 and data["rest"]["tracks"] == [ids[0]]
+    assert data["tracks"][0]["without"] == f"{ids[0]}.without.wav"
+    np.testing.assert_allclose(read(folder / f"{ids[0]}.without.wav")[:, 0], b + c, atol=1e-6)
+    assert finish(session, ids[1], b, a + c, c)  # the chain step removed "mid" from "everything but low"
     data = sessions.load(sid)
     assert [t["status"] for t in data["tracks"]] == ["done", "done"]
-    assert data["rest"]["rev"] == 2
-    folder = sessions.session_dir(sid)
-    # Each track takes its sound's place in the stereo image...
-    np.testing.assert_allclose(read(folder / f"{ids[0]}.wav"), np.stack([a, 0.5 * a], axis=1), atol=1e-4)
-    # ...so muting it removes the sound from both channels.
-    rest = read(folder / data["rest"]["file"])
-    np.testing.assert_allclose(rest, np.stack([c, 0.5 * c], axis=1), atol=1e-4)
-    # The old revision's files are gone.
-    assert not (sessions.session_dir(sid) / "rest.1.wav").exists()
+    assert data["rest"]["rev"] == 2 and data["rest"]["tracks"] == ids
+    np.testing.assert_allclose(read(folder / data["rest"]["file"])[:, 0], c, atol=1e-6)
+    assert not (folder / "rest.1.wav").exists()
 
 
-def test_all_tracks_at_unity_rebuild_the_original(store):
+def test_unity_mix_plays_the_original(store):
     session, (a, b, c) = make_session(store, channels=1)
     sid = session["id"]
     ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}], {}, "job-1")
-    finish(session, ids[0], a)
-    finish(session, ids[1], b)
-    gains = {ids[0]: 1.0, ids[1]: 1.0, "rest": 1.0}
-    path, name = sessions.export_mix(sid, gains, "wav")
-    original = read(sessions.session_dir(sid) / "original.wav")
+    finish(session, ids[0], a, b + c, b + c)
+    finish(session, ids[1], b, a + c, c)
+    path, name = sessions.export_mix(sid, {ids[0]: 1.0, ids[1]: 1.0, "rest": 1.0}, "wav")
     assert sf.info(str(path)).subtype == "PCM_24"  # not the float working file
-    np.testing.assert_allclose(read(path), original, atol=2e-6)
+    np.testing.assert_allclose(read(path), read(sessions.session_dir(sid) / "original.wav"), atol=2e-6)
     assert name == "My Song [mix].wav"
+
+
+def test_mix_plan_plays_model_output(store):
+    session, (a, b, c) = make_session(store, channels=1)
+    sid = session["id"]
+    ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}], {}, "job-1")
+    finish(session, ids[0], a, b + c, b + c)
+    finish(session, ids[1], b, a + c, c)
+    data = sessions.load(sid)
+
+    def plan(**changes):
+        gains = {ids[0]: 1.0, ids[1]: 1.0, "rest": 1.0}
+        gains.update({ids[int(k[1])] if k in ("t0", "t1") else k: v for k, v in changes.items()})
+        return [(path.name, round(g, 3)) for path, g in sessions.mix_plan(data, gains)]
+
+    assert plan() == [("original.wav", 1.0)]
+    assert plan(t0=0.0) == [(f"{ids[0]}.without.wav", 1.0)]
+    assert plan(t1=0.5) == [(f"{ids[1]}.without.wav", 1.0), (f"{ids[1]}.wav", 0.5)]
+    assert plan(t0=0.0, t1=0.5) == [(data["rest"]["file"], 1.0), (f"{ids[1]}.wav", 0.5)]
+    assert plan(rest=0.0) == [(f"{ids[0]}.wav", 1.0), (f"{ids[1]}.wav", 1.0)]
+    # Muting one sound plays exactly the model's own "without".
+    path, _ = sessions.export_mix(sid, {ids[0]: 0.0, ids[1]: 1.0, "rest": 1.0}, "wav")
+    np.testing.assert_allclose(read(path)[:, 0], b + c, atol=2e-5)
 
 
 def test_mix_labels(store):
     session, (a, b, c) = make_session(store)
     sid = session["id"]
     ids = sessions.add_tracks(sid, [{"text": "vocals"}, {"text": "drums"}], {}, "job-1")
-    finish(session, ids[0], a)
-    finish(session, ids[1], b)
+    finish(session, ids[0], a, b + c, b + c)
+    finish(session, ids[1], b, a + c, c)
     data = sessions.load(sid)
     assert sessions.mix_label(data, {ids[0]: 1.0}) == "vocals"
     assert sessions.mix_label(data, {ids[1]: 1.0, "rest": 1.0}) == "no vocals"
@@ -116,19 +144,19 @@ def test_mix_labels(store):
 
 
 def test_muted_everything_is_an_error(store):
-    session, (a, _, _) = make_session(store)
+    session, (a, b, c) = make_session(store)
     ids = sessions.add_tracks(session["id"], [{"text": "x"}], {}, "job-1")
-    finish(session, ids[0], a)
+    finish(session, ids[0], a, b + c, b + c)
     with pytest.raises(ValueError):
         sessions.export_mix(session["id"], {ids[0]: 0.0, "rest": 0.0}, "wav")
 
 
 def test_export_tracks_zip_names(store):
-    session, (a, b, _) = make_session(store)
+    session, (a, b, c) = make_session(store)
     sid = session["id"]
     ids = sessions.add_tracks(sid, [{"text": "vocals"}, {"text": "vocals"}], {}, "job-1")
-    finish(session, ids[0], a)
-    finish(session, ids[1], b)
+    finish(session, ids[0], a, b + c, b + c)
+    finish(session, ids[1], b, a + c, c)
     path, name = sessions.export_tracks(sid, [ids[0], ids[1], "rest"], "flac")
     assert name == "My Song [tracks].zip"
     with zipfile.ZipFile(path) as zf:
@@ -138,26 +166,29 @@ def test_export_tracks_zip_names(store):
 
 
 def test_video_export_needs_a_video(store):
-    session, (a, _, _) = make_session(store)
+    session, (a, b, c) = make_session(store)
     ids = sessions.add_tracks(session["id"], [{"text": "x"}], {}, "job-1")
-    finish(session, ids[0], a)
+    finish(session, ids[0], a, b + c, b + c)
     with pytest.raises(ValueError):
         sessions.export_video(session["id"], {ids[0]: 1.0})
 
 
-def test_drop_track_updates_rest(store):
+def test_removing_a_done_track_puts_its_sound_back(store):
     session, (a, b, c) = make_session(store, channels=1)
     sid = session["id"]
+    folder = sessions.session_dir(sid)
     ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}], {}, "job-1")
-    finish(session, ids[0], a)
-    finish(session, ids[1], b)
-    sessions.drop_track(sid, ids[1])
-    sessions.rebuild_rest(sid)
+    finish(session, ids[0], a, b + c, b + c)
+    finish(session, ids[1], b, a + c, c)
+    sessions.remove_done_track(sid, ids[0])
     data = sessions.load(sid)
-    assert [t["id"] for t in data["tracks"]] == [ids[0]]
-    rest = read(sessions.session_dir(sid) / data["rest"]["file"])[:, 0]
-    np.testing.assert_allclose(rest, b + c, atol=1e-5)
-    assert not (sessions.session_dir(sid) / f"{ids[1]}.wav").exists()
+    assert [t["id"] for t in data["tracks"]] == [ids[1]]
+    assert data["rest"]["tracks"] == [ids[1]]
+    np.testing.assert_allclose(read(folder / data["rest"]["file"])[:, 0], a + c, atol=1e-5)
+    for leftover in (f"{ids[0]}.wav", f"{ids[0]}.without.wav", f"{ids[0]}.deleted.wav"):
+        assert not (folder / leftover).exists()
+    sessions.remove_done_track(sid, ids[1])  # nothing separated any more: no "everything else"
+    assert sessions.load(sid)["rest"] is None
 
 
 def test_finish_after_removal_discards_audio(store):
@@ -165,8 +196,9 @@ def test_finish_after_removal_discards_audio(store):
     sid = session["id"]
     [tid] = sessions.add_tracks(sid, [{"text": "x"}], {}, "job-1")
     sessions.drop_track(sid, tid)
-    assert sessions.finish_track(sid, tid, torch.from_numpy(a[None]), SR, 1.0) is False
-    assert not (sessions.session_dir(sid) / f"{tid}.wav").exists()
+    assert finish(session, tid, a, a, a) is False
+    for leftover in (f"{tid}.wav", f"{tid}.without.wav"):
+        assert not (sessions.session_dir(sid) / leftover).exists()
 
 
 def test_list_and_cleanup(store):
@@ -182,19 +214,18 @@ def test_list_and_cleanup(store):
     assert [s["id"] for s in sessions.list_sessions()] == [s2["id"]]
 
 
-def test_hard_panned_sound_leaves_no_trace_in_everything_else(store):
+def test_mono_track_on_stereo_source_gets_its_stereo_image(store):
     a, b = tone(220), tone(330)
     upload = store / "panned.wav"
     sf.write(str(upload), np.stack([a + b, b], axis=1), SR, subtype="FLOAT")  # a hard left, b centre
     session = sessions.create(upload, "panned.wav", is_video=False)
     sid = session["id"]
     ids = sessions.add_tracks(sid, [{"text": "left"}, {"text": "centre"}], {}, "job-1")
-    finish(session, ids[0], 0.5 * a)  # what mono separation finds in the downmix
-    finish(session, ids[1], b)
+    finish(session, ids[0], 0.5 * a, b, b)  # what mono separation finds in the downmix
+    finish(session, ids[1], b, 0.5 * a, np.zeros_like(a))
     folder = sessions.session_dir(sid)
+    np.testing.assert_allclose(read(folder / f"{ids[0]}.wav"), np.stack([a, 0 * a], axis=1), atol=1e-3)
     assert read(folder / f"{ids[1]}.wav").shape[1] == 1  # centred: stays mono
-    rest = read(folder / sessions.load(sid)["rest"]["file"])
-    assert np.abs(rest).max() < 1e-4  # no half-left copy, no inverted right copy
 
 
 def test_interrupted_jobs_fail_their_tracks(store):
@@ -224,29 +255,22 @@ def test_cleanup_removes_abandoned_running_sessions(store):
     assert sessions.list_sessions() == []
 
 
-def test_rest_is_rebuilt_when_tracks_change_meanwhile(store, monkeypatch):
+def test_chain_step_puts_back_a_track_removed_meanwhile(store):
     session, (a, b, c) = make_session(store, channels=1)
     sid = session["id"]
+    folder = sessions.session_dir(sid)
     ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}], {}, "job-1")
-    finish(session, ids[0], a)
-    real_combine = sessions._combine
-    calls = []
-
-    def combine(*args, **kwargs):  # Redis down (no lock): the low track is removed mid-build
-        if not calls:
-            sessions.update(sid, lambda d: d.update(tracks=[t for t in d["tracks"] if t["id"] != ids[0]]))
-        calls.append(1)
-        return real_combine(*args, **kwargs)
-
-    monkeypatch.setattr(sessions, "_combine", combine)
-    finish(session, ids[1], b)
+    finish(session, ids[0], a, b + c, b + c)
+    chain_from = dict(sessions.load(sid)["rest"])  # the "mid" step starts from "everything but low"
+    sessions.set_track(sid, ids[1], status="running")
+    sessions.remove_done_track(sid, ids[0])  # removed while "mid" runs
+    assert (folder / f"{ids[0]}.deleted.wav").exists()
+    assert finish(session, ids[1], b, a + c, c, chain_from=chain_from)
     data = sessions.load(sid)
-    assert len(calls) == 2
     assert data["rest"]["tracks"] == [ids[1]]
-    rest = read(sessions.session_dir(sid) / data["rest"]["file"])[:, 0]
-    np.testing.assert_allclose(rest, a + c, atol=1e-5)
-    leftovers = [p.name for p in sessions.session_dir(sid).iterdir() if p.name.startswith("rest-build")]
-    assert leftovers == []
+    np.testing.assert_allclose(read(folder / data["rest"]["file"])[:, 0], a + c, atol=1e-5)
+    sessions.purge_deleted(sid)
+    assert not (folder / f"{ids[0]}.deleted.wav").exists()
 
 
 def test_cleanup_if_due_is_throttled(store, monkeypatch):
@@ -262,9 +286,10 @@ def test_ids_cannot_escape_the_session_folder(store):
     for bad in ("..", "../x", "0123", "ABCDEF0123456789", "0123456789abcdef/.."):
         with pytest.raises(sessions.SessionNotFound):
             sessions.session_dir(bad)
-    for name in ("session.json", "../original.wav", "original.wav/..", "t123.wav", "exports"):
+    for name in ("session.json", "../original.wav", "original.wav/..", "t123.wav", "exports",
+                 "t0123abcd.deleted.wav", "rest-build-1234abcd.wav"):
         assert not sessions.SERVABLE.match(name)
-    for name in ("original.wav", "t0123abcd.wav", "rest.3.peaks.json", "source.mp4"):
+    for name in ("original.wav", "t0123abcd.wav", "t0123abcd.without.wav", "rest.3.peaks.json", "source.mp4"):
         assert sessions.SERVABLE.match(name)
 
 
@@ -369,7 +394,11 @@ def test_api_files_support_range_requests(client):
 def test_api_export_mix(client):
     sid = upload(client).json()["id"]
     [tid] = sessions.add_tracks(sid, [{"text": "high"}], {}, "job-1")
-    sessions.finish_track(sid, tid, torch.from_numpy(tone(660, 2.0)[None]), SR, 1.0)
+    sessions.finish_track(sid, tid, as_audio(tone(660, 2.0)), as_audio(tone(440, 2.0)), as_audio(tone(440, 2.0)),
+                          SR, 1.0, None)
+    track = client.get(f"/api/sessions/{sid}").json()["tracks"][0]
+    assert track["without_url"].endswith(f"/files/{tid}.without.wav")
+    assert client.get(track["without_url"]).status_code == 200
     res = client.post(f"/api/sessions/{sid}/export",
                       json={"kind": "mix", "format": "flac", "gains": {tid: 0.0, "rest": 1.0}})
     assert res.status_code == 200, res.text

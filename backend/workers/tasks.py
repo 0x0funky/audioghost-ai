@@ -351,9 +351,10 @@ def _friendly_error(err: BaseException) -> str:
 def separate_session_task(self, session_id: str, track_ids: List[str], options: dict):
     """
     Separate the queued prompts of a session, one after another. Each finished
-    sound is saved right away (the UI can play it while the next one runs) and
-    "everything else" is recomputed. Only the targets are decoded: the rest is
-    the original minus the tracks.
+    sound is saved right away (the UI can play it while the next one runs), with
+    the model's own "without this sound" and a new "everything else": a chain, in
+    which the model removes this sound from what was left after the earlier ones.
+    Everything played back is model output; nothing is subtracted.
     """
     import sessions
     from workers import audio_io, sam_lite
@@ -417,6 +418,7 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
             safely(sessions.set_track, session_id, tid, status="running", progress=0.0, message="Starting")
             started = time.perf_counter()
             last = {"time": 0.0}
+            chain_from = dict(data["rest"]) if data.get("rest") else None
 
             def progress(fraction, message, tid=tid, last=last):
                 now = time.monotonic()
@@ -429,21 +431,24 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
             def should_cancel(tid=tid) -> bool:
                 return job_cancelled() or queue_state.is_cancelled(f"{job_id}:{tid}")
 
+            def stage(lo, hi, progress=progress):
+                return lambda fraction, message: progress(lo + (hi - lo) * fraction, message)
+
             try:  # one bad prompt (or a failed save) shouldn't stop the rest
-                result = sam_lite.separate(
-                    lite,
-                    audio,
-                    track["prompt"],
-                    chunk_seconds=chunk,
-                    steps=steps,
-                    anchors=sam_lite.normalize_anchors(track.get("anchors")),
-                    seed=seed,
-                    progress=progress,
-                    should_cancel=should_cancel,
-                    decode_residual=False,
-                )
+                common = dict(chunk_seconds=chunk, steps=steps, seed=seed, should_cancel=should_cancel,
+                              anchors=sam_lite.normalize_anchors(track.get("anchors")))
+                result = sam_lite.separate(lite, audio, track["prompt"],
+                                           progress=stage(0.0, 0.5 if chain_from else 1.0), **common)
+                rest = result.residual
+                if chain_from:
+                    # The chain: the model removes this sound from what the earlier ones left.
+                    previous = audio_io.load_audio(sessions.session_dir(session_id) / chain_from["file"],
+                                                   lite.sample_rate, stereo=stereo)
+                    rest = sam_lite.separate(lite, previous, track["prompt"], progress=stage(0.5, 1.0),
+                                             decode_target=False, **common).residual
                 elapsed = time.perf_counter() - started
-                safely(sessions.finish_track, session_id, tid, result.target, lite.sample_rate, elapsed)
+                safely(sessions.finish_track, session_id, tid, result.target, result.residual, rest,
+                       lite.sample_rate, elapsed, chain_from)
             except sam_lite.SeparationCancelled:
                 safely(sessions.drop_track, session_id, tid)
                 continue
@@ -463,6 +468,7 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
     finally:
         for tid in open_tracks():  # cancelled before they started
             safely(sessions.drop_track, session_id, tid)
+        safely(sessions.purge_deleted, session_id)
         queue_state.mark_finished(job_id)
         gc.collect()
         try:

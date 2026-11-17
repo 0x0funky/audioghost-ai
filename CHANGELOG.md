@@ -7,20 +7,24 @@ A new workspace: several sounds per run, each on its own track, a mixer, and exp
 ### New
 - **Sessions**: an upload and everything separated from it live in a session that survives page reloads and restarts (the URL carries `?session=`). Recent sessions are listed on the start screen for 24 hours.
 - **Several sounds per run**, one track each, processed one after another; finished tracks are playable while the next one runs. Cancel a running track, or remove queued and finished ones.
-- **Everything else** = the original minus every finished track, so all tracks at 0 dB add up to the original exactly (max error 1.8e-7 in an end-to-end test) and muting a track removes exactly that sound. On a mixture with known sources it matched SAM-Audio's own residual on average (SI-SDR 1.6 vs 2.8 dB for a speech prompt, 10.4 vs 6.8 dB for a music prompt), and skipping the residual decode makes each track faster.
+- **Everything else, made by the model**: each new sound is removed by SAM-Audio from what the earlier ones left (a chain), and each track also keeps the model's own "without this sound". SAM-Audio regenerates what it separates, so its output does not line up with the original sample for sample: on real recordings, subtracting the tracks from the original removed only 0-4 dB of a sound, while the chain removed 5-10 dB and still sounds like the recording.
+- **The mix plays model output only**, picked by what you changed: everything at 0 dB plays the original; one track changed plays that track's "without" plus the track at your level; more changes play Everything else plus the tracks. Exports follow the same rule. Removing a finished track adds its sound back to Everything else.
 - **Mixer**: volume, mute and solo per track, *hold to hear the original*; every source streams through a WebAudio gain and stays in sync with the original (and the video).
 - **Exports**: what you hear as one file, single tracks as a ZIP, or the video with the mix; 24-bit WAV, FLAC or MP3; names like `song [no vocals].wav` or `song [everything else].wav`.
 - **Temporal Lock, both ways**: drag on the timeline to mark where a sound is audible or where it is not, per sound (SAM-Audio's positive and negative anchors).
 - **Start screen** with upload progress, recent sessions and a setup card (GPU, Hugging Face access, downloaded models); system status moved into a chip in the top bar.
 - **Sessions API** (`/api/sessions/...`); the v1.1 endpoints keep working.
 - Sounds separated in mono from a stereo file keep their place in the stereo image (each track's left/right
-  balance is measured against the original), so muting a panned instrument removes it from both channels.
+  balance is measured against the original).
 - Tracks that were running when the worker stopped (window closed, crash, out of memory) are marked
   "Interrupted" when it starts again, with *Try again*, instead of spinning forever.
 
 ### Changed
 - The interface was rebuilt around one workspace (multi-track timeline, separate panel, mix bar) with a single design system for dark and light themes; CSS modules replace ~250 inline style blocks, and one track lane replaces the two separate mixers.
 - The worker's heartbeat now carries the GPU, its memory and the loaded model.
+- Stereo separation is on by default for stereo files (sessions API and UI); a mono pass would collapse everything
+  else to mono.
+- The header shows the original AudioGhost logo and wordmark again.
 - WaveSurfer and Tailwind were removed from the frontend (no longer used); Next's dev badge is hidden.
 
 ### Fixed

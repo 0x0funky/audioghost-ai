@@ -52,7 +52,7 @@ class SeparateRequest(BaseModel):
     model_size: str = "base"
     quality: str = "balanced"
     variant: str = "default"
-    stereo: bool = False
+    stereo: bool = True  # only applies to stereo sources
     use_float32: bool = False
     chunk_duration: float = 25.0
     seed: Optional[int] = None
@@ -87,6 +87,7 @@ def present(data: dict) -> dict:
         item = {k: v for k, v in track.items() if k != "job_id"}
         item["audio_url"] = files + track["file"] if track.get("file") else None
         item["peaks_url"] = files + f"{track['id']}.peaks.json" if track.get("file") else None
+        item["without_url"] = files + track["without"] if track.get("without") else None
         item["jobs_ahead"] = queue_state.jobs_ahead(track["job_id"]) if track["status"] == "queued" else None
         tracks.append(item)
     rest = data.get("rest")
@@ -205,9 +206,10 @@ def remove_track(sid: str, tid: str):
     if track["status"] == "running" and _worker_runs(track.get("job_id")):
         queue_state.request_cancel(f"{track['job_id']}:{tid}")
         return {"cancelling": tid}
-    sessions.drop_track(sid, tid)
     if track["status"] == "done":
-        sessions.rebuild_rest(sid)
+        sessions.remove_done_track(sid, tid)  # its sound goes back into "everything else"
+    else:
+        sessions.drop_track(sid, tid)
     return {"removed": tid}
 
 
