@@ -25,6 +25,10 @@ v1.1 made separation 4–6× faster, fixed the installers and added macOS & Linu
 
 ## 🎬 Demo
 
+https://github.com/user-attachments/assets/4dd5dc31-f28e-4f7f-924c-d3eeac3f7f7d
+
+A real field recording ("New Orleans ambience" by cognito perceptu, CC0). AudioGhost finds the band, plays just the band, then takes it out. Turn the sound on.
+
 ![The AudioGhost workspace: the original, a speech track, a background-music track and everything else, with the separate panel on the right](docs/images/v1.2-workspace.png)
 
 <details>
