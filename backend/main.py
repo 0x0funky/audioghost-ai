@@ -9,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api import auth, separate, sessions, tasks
-from settings import FRONTEND_ORIGIN_REGEX, FRONTEND_ORIGINS, OUTPUT_DIR, RETENTION_HOURS
+from settings import (FRONTEND_ORIGIN_REGEX, FRONTEND_ORIGINS, INPROCESS, OUTPUT_DIR, RETENTION_HOURS,
+                      STATIC_DIR)
 
 VERSION = "1.2.0"
 
@@ -24,7 +25,18 @@ async def lifespan(_app: FastAPI):
     if removed or removed_sessions:
         print(f"[AudioGhost] Removed {removed} files and {removed_sessions} sessions "
               f"older than {RETENTION_HOURS:g}h")
+    if INPROCESS:
+        # Desktop app: this process is also the worker. Same start-up as a Celery
+        # worker: fail interrupted tracks, start the heartbeat, warm up.
+        from workers import dispatch
+        from workers import tasks as worker_tasks
+
+        worker_tasks._start_heartbeat()
+        worker_tasks._warm_up()
     yield
+    if INPROCESS:
+        dispatch.shutdown()
+        worker_tasks._stop_heartbeat()
 
 
 app = FastAPI(
@@ -53,9 +65,10 @@ app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(sessions.router, prefix="/api/sessions", tags=["Sessions"])
 
 
-@app.get("/")
-async def root():
-    return {"name": "AudioGhost AI", "version": VERSION, "status": "running"}
+if not STATIC_DIR:
+    @app.get("/")
+    async def root():
+        return {"name": "AudioGhost AI", "version": VERSION, "status": "running"}
 
 
 @app.get("/health")
@@ -74,7 +87,7 @@ async def system_status():
     info = (queue_state.worker_info() or {}) if redis_ok else {}
     heartbeat = info.get("state")
     worker_ok = bool(running or heartbeat)
-    if redis_ok and not worker_ok:
+    if redis_ok and not worker_ok and not INPROCESS:
         # Fallback for workers that don't send heartbeats (older versions).
         try:
             replies = await run_in_threadpool(celery_app.control.ping, timeout=1.0)
@@ -91,3 +104,8 @@ async def system_status():
         "device": {k: info[k] for k in ("device", "gpu", "vram_total_gb", "vram_used_gb", "model")
                    if k in info} or None,
     }
+
+
+if STATIC_DIR:
+    # Desktop app: the exported web UI, on the same origin as the API.
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="ui")

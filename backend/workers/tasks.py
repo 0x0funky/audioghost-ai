@@ -131,9 +131,11 @@ def _recover_interrupted_tracks() -> None:
     try:
         import sessions
 
+        from settings import INPROCESS
+
         dead = {job for job in [queue_state.running_task()] if job}
         queue_state.clear_running()
-        failed = sessions.recover_interrupted(dead)
+        failed = sessions.recover_interrupted(dead, all_active=INPROCESS)
         if failed:
             logger.warning("Marked %d interrupted track(s) as failed", failed)
     except Exception as err:  # noqa: BLE001 - best effort

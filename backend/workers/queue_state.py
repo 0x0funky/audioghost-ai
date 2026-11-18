@@ -9,7 +9,8 @@ Small Redis-backed bookkeeping shared by the API and the worker:
   task that is already running in a ``--pool=solo`` worker).
 
 Every helper fails soft: if Redis is unreachable, the app still works, it just
-loses these extras.
+loses these extras. In the desktop app (``AUDIOGHOST_INPROCESS=1``) the API and
+the jobs share one process, and an in-memory store takes Redis' place.
 """
 import contextlib
 import json
@@ -17,7 +18,7 @@ import logging
 import time
 from typing import Optional
 
-from settings import REDIS_URL
+from settings import INPROCESS, REDIS_URL
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +39,14 @@ _client = None
 def _redis():
     global _client
     if _client is None:
-        import redis
+        if INPROCESS:
+            from workers.memory_store import MemoryRedis
 
-        _client = redis.Redis.from_url(REDIS_URL, socket_timeout=2, socket_connect_timeout=2)
+            _client = MemoryRedis()
+        else:
+            import redis
+
+            _client = redis.Redis.from_url(REDIS_URL, socket_timeout=2, socket_connect_timeout=2)
     return _client
 
 

@@ -8,11 +8,22 @@ import os
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = Path(os.environ.get("AUDIOGHOST_UPLOAD_DIR", BACKEND_DIR / "uploads"))
-OUTPUT_DIR = Path(os.environ.get("AUDIOGHOST_OUTPUT_DIR", BACKEND_DIR / "outputs"))
-TOKEN_FILE = BACKEND_DIR / ".hf_token"
+#: Uploads, results and the saved Hugging Face token. The web version keeps them
+#: next to the code; the desktop app points this at the user's app-data folder.
+DATA_DIR = Path(os.environ.get("AUDIOGHOST_DATA_DIR", BACKEND_DIR))
+UPLOAD_DIR = Path(os.environ.get("AUDIOGHOST_UPLOAD_DIR", DATA_DIR / "uploads"))
+OUTPUT_DIR = Path(os.environ.get("AUDIOGHOST_OUTPUT_DIR", DATA_DIR / "outputs"))
+TOKEN_FILE = Path(os.environ.get("AUDIOGHOST_TOKEN_FILE", DATA_DIR / ".hf_token"))
 
 REDIS_URL = os.environ.get("AUDIOGHOST_REDIS_URL", "redis://localhost:6379/0")
+
+#: Desktop app: run separations inside the API process, one at a time, with
+#: in-memory bookkeeping, so neither Redis nor a Celery worker is needed.
+INPROCESS = os.environ.get("AUDIOGHOST_INPROCESS", "") == "1"
+
+#: Serve the exported web UI from this folder at "/" (the desktop app), so the
+#: UI and the API share one origin.
+STATIC_DIR = os.environ.get("AUDIOGHOST_STATIC_DIR") or None
 
 #: Uploads and results older than this are deleted (0 = keep forever).
 #: Matches Celery's result_expires, after which the UI can't reach them anyway.

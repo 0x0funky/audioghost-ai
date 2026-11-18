@@ -10,8 +10,11 @@ import type {
 } from "./types";
 
 // Central place for backend URLs. Override with NEXT_PUBLIC_API_BASE if the
-// API runs somewhere other than http://localhost:8000.
-export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000").replace(/\/$/, "");
+// API runs somewhere other than http://localhost:8000. "same-origin" (the
+// desktop app, where the backend serves this UI itself) makes URLs relative.
+const configuredBase = process.env.NEXT_PUBLIC_API_BASE;
+export const API_BASE =
+  configuredBase === "same-origin" ? "" : (configuredBase || "http://localhost:8000").replace(/\/$/, "");
 
 export const apiUrl = (path: string) => (path.startsWith("http") ? path : `${API_BASE}${path}`);
 

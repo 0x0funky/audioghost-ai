@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 import sessions
 from api.separate import _is_video, _save_upload
 from settings import RETENTION_HOURS, read_hf_token
-from workers import queue_state
+from workers import dispatch, queue_state
 
 router = APIRouter()
 
@@ -184,7 +184,7 @@ def separate(sid: str, request: SeparateRequest):
     job_id = str(uuid.uuid4())
     track_ids = sessions.add_tracks(sid, prompts, options, job_id)
     queue_state.enqueue(job_id)
-    separate_session_task.apply_async(args=[sid, track_ids, options], task_id=job_id)
+    dispatch.submit(separate_session_task, args=[sid, track_ids, options], task_id=job_id)
     return {"job_id": job_id, "track_ids": track_ids, "session": present(sessions.load(sid))}
 
 

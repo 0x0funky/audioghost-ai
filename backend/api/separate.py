@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from settings import MAX_UPLOAD_MB, RETENTION_HOURS, UPLOAD_DIR
-from workers import queue_state
+from workers import dispatch, queue_state
 from workers.tasks import cleanup_old_files, separate_audio_task
 
 router = APIRouter()
@@ -75,7 +75,8 @@ def _is_video(file: UploadFile) -> bool:
 def _submit(upload_path: Path, description: str, options: dict) -> str:
     task_id = str(uuid.uuid4())
     queue_state.enqueue(task_id)
-    separate_audio_task.apply_async(
+    dispatch.submit(
+        separate_audio_task,
         kwargs={"audio_path": str(upload_path), "description": description, **options},
         task_id=task_id,
     )

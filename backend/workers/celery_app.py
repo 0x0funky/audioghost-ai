@@ -3,12 +3,14 @@ Celery Application Configuration
 """
 from celery import Celery
 
-from settings import REDIS_URL
+from settings import INPROCESS, REDIS_URL
 
+# The desktop app runs jobs in the API process (workers.dispatch), so its broker
+# and result store live in memory; task progress is read from the same process.
 celery_app = Celery(
     "audioghost",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker="memory://" if INPROCESS else REDIS_URL,
+    backend="cache+memory://" if INPROCESS else REDIS_URL,
     include=["workers.tasks"],
 )
 
