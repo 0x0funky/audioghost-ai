@@ -132,7 +132,7 @@ async def download_model():
 
 @router.post("/logout")
 async def logout():
-    """Clear saved token"""
-    if TOKEN_FILE.exists():
-        TOKEN_FILE.unlink()
+    """Forget the token. An empty file (not none) also stops the fallback to
+    HF_TOKEN or the Hugging Face CLI's saved token."""
+    TOKEN_FILE.write_text("", encoding="utf-8")
     return {"success": True, "message": "Logged out"}

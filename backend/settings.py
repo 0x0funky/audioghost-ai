@@ -53,9 +53,19 @@ for _directory in (UPLOAD_DIR, OUTPUT_DIR, SESSION_DIR):
 
 
 def read_hf_token():
-    """Token saved by the UI, falling back to the standard HF_TOKEN env var."""
+    """
+    The token saved in the UI; else the HF_TOKEN env var; else the token Hugging
+    Face's own CLI saved (``hf auth login``), so a machine that is already logged
+    in works right away. Disconnecting in the UI leaves an empty token file,
+    which turns both fallbacks off.
+    """
     if TOKEN_FILE.exists():
-        token = TOKEN_FILE.read_text(encoding="utf-8").strip()
-        if token:
-            return token
-    return os.environ.get("HF_TOKEN") or None
+        return TOKEN_FILE.read_text(encoding="utf-8").strip() or None
+    if os.environ.get("HF_TOKEN"):
+        return os.environ["HF_TOKEN"]
+    try:
+        from huggingface_hub import get_token
+
+        return get_token()
+    except Exception:  # noqa: BLE001 - no CLI token, or an old huggingface_hub
+        return None

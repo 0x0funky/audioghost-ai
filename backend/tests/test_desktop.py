@@ -120,3 +120,20 @@ def test_restart_fails_queued_tracks_too(store):
     # The desktop app's queue lived in memory: everything active is gone.
     assert sessions.recover_interrupted(set(), all_active=True) == 2
     assert {t["status"] for t in sessions.load(sid)["tracks"]} == {"failed"}
+
+
+def test_token_falls_back_to_the_cli_login_until_disconnected(tmp_path, monkeypatch):
+    import huggingface_hub
+    import settings
+
+    token_file = tmp_path / ".hf_token"
+    monkeypatch.setattr(settings, "TOKEN_FILE", token_file)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setattr(huggingface_hub, "get_token", lambda: "hf_from_cli")
+    assert settings.read_hf_token() == "hf_from_cli"   # logged in with `hf auth login`
+    monkeypatch.setenv("HF_TOKEN", "hf_from_env")
+    assert settings.read_hf_token() == "hf_from_env"
+    token_file.write_text("hf_saved_in_app")
+    assert settings.read_hf_token() == "hf_saved_in_app"
+    token_file.write_text("")                           # Disconnect in the UI
+    assert settings.read_hf_token() is None

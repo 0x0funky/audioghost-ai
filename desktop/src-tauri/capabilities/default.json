@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The launcher window: core events and window access. The AudioGhost UI itself is served by the local backend and gets no app access.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

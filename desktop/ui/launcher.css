@@ -1,0 +1,88 @@
+/* The launcher: the app's own dark palette and violet, set small and calm.
+   Fonts are bundled (the launcher must work offline). */
+@font-face { font-family: "AG Inter"; src: url("fonts/inter-latin-var.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "AG Space Grotesk"; src: url("fonts/space-grotesk-latin-var.woff2") format("woff2"); font-weight: 300 700; font-display: block; }
+
+:root {
+  --bg: #0b0b10;
+  --surface: #14141b;
+  --line: #262535;
+  --fg: #eeedf5;
+  --muted: #a09eb3;
+  --faint: #6c6a80;
+  --violet: #b3a7ff;
+  --violet-strong: #6a5ae0;
+  --violet-hover: #7b6cf0;
+  --ok: #57d29a;
+  --warn: #f0b45a;
+  --err: #ff8a7a;
+  --ghost: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 50%, #f472b6 100%);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: radial-gradient(70% 55% at 50% 0%, rgba(106, 90, 224, 0.13), transparent 70%), var(--bg);
+  color: var(--fg); font: 15px/1.6 "AG Inter", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+  display: grid; place-items: center; padding: 40px 24px; overflow-y: auto;
+}
+.shell { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 32px; }
+.brand { display: flex; align-items: center; gap: 16px; }
+.brand img { border-radius: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); }
+.wordmark { font: 600 26px/1.1 "AG Space Grotesk", "Segoe UI", sans-serif; letter-spacing: -0.02em; }
+.ghost { background: var(--ghost); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.version { color: var(--faint); font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.view { display: flex; flex-direction: column; gap: 18px; }
+h1 { margin: 0; font: 600 28px/1.2 "AG Space Grotesk", "Segoe UI", sans-serif; letter-spacing: -0.02em; }
+h2 { margin: 0; font: 600 16px/1.3 "AG Space Grotesk", "Segoe UI", sans-serif; }
+p { margin: 0; }
+.lead { color: var(--muted); }
+.quiet { color: var(--muted); display: flex; align-items: center; gap: 10px; }
+.facts { margin: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.facts > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; padding: 11px 16px; border-top: 1px solid var(--line); }
+.facts > div:first-child { border-top: 0; }
+.facts dt { color: var(--faint); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.facts dd.ok::before, .facts dd.warn::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+.facts dd.ok::before { background: var(--ok); }
+.facts dd.warn::before { background: var(--warn); }
+.path { font-size: 13px; color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+button {
+  font: 500 14px "AG Inter", "Segoe UI", sans-serif; color: var(--fg); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 16px; cursor: pointer;
+}
+button:hover:not(:disabled) { background: #1b1b25; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--violet-strong); border-color: var(--violet-strong); color: #fff; font-weight: 600; padding: 10px 22px; }
+button.primary:hover:not(:disabled) { background: var(--violet-hover); }
+button.link { background: none; border: 0; padding: 0; color: var(--faint); font-size: 13px; }
+button.link:hover { color: var(--muted); background: none; }
+:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+.hint { color: var(--faint); font-size: 13px; }
+.existing { border-top: 1px solid var(--line); padding-top: 22px; display: flex; flex-direction: column; gap: 10px; }
+.existing ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.existing li { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 8px 8px 14px; background: var(--surface); }
+.existing li code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 13px ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--muted); }
+.existing .result { flex-basis: 100%; }
+.other summary, .log summary { color: var(--faint); cursor: pointer; font-size: 13px; }
+.other .row { display: flex; gap: 8px; margin-top: 10px; }
+.other input { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; color: var(--fg); padding: 9px 12px; font: 13px ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.error { color: var(--err); font-size: 13px; white-space: pre-wrap; margin-top: 8px; }
+.steps { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.steps li { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--faint); }
+.steps li:first-child { border-top: 0; }
+.steps li::before { content: ""; flex: none; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--line); }
+.steps li.done { color: var(--muted); }
+.steps li.done::before { border-color: var(--ok); background: radial-gradient(circle, var(--ok) 0 4px, transparent 5px); }
+.steps li.active { color: var(--fg); }
+.steps li.active::before { border-color: var(--violet); border-top-color: transparent; animation: spin 0.9s linear infinite; }
+.steps li.failed { color: var(--err); }
+.steps li.failed::before { border-color: var(--err); }
+.now { color: var(--faint); font-size: 13px; min-height: 1.6em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.log pre { margin: 10px 0 0; max-height: 220px; overflow: auto; background: #08080c; border: 1px solid var(--line); border-radius: 10px; padding: 12px; font: 12px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.spinner { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--violet); border-top-color: transparent; animation: spin 0.9s linear infinite; flex: none; }
+.foot { display: flex; gap: 8px; color: var(--faint); font-size: 13px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner, .steps li.active::before { animation: none; } }
