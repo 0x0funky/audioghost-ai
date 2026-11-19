@@ -1,0 +1,58 @@
+# Builds the Windows desktop installer when a version tag (v*) is pushed, and attaches it to a
+# draft GitHub release together with the signed update feed (latest.json) that the app checks.
+# Publishing the draft makes it the latest release, which is what installed apps update to.
+#
+# Secret: TAURI_SIGNING_PRIVATE_KEY, the updater signing key (see desktop/README.md).
+name: Desktop release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      # prepare.mjs bundles this uv.exe; desktop/licenses holds this version's license texts.
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.10.7"
+
+      - name: Install dependencies
+        run: |
+          npm ci --prefix frontend
+          npm ci --prefix desktop
+
+      - name: Build the installer and draft the release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          projectPath: desktop
+          tauriScript: npx tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: AudioGhost ${{ github.ref_name }}
+          releaseBody: Release notes follow.
+          releaseDraft: true
+          updaterJsonPreferNsis: true

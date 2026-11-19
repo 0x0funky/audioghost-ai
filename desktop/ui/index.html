@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AudioGhost</title>
+  <link rel="stylesheet" href="launcher.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="brand">
+      <img src="logo.png" alt="" width="72" height="72">
+      <div>
+        <div class="wordmark">Audio<span class="ghost">Ghost</span></div>
+        <div class="version" id="version"></div>
+      </div>
+    </header>
+
+    <!-- Checking -->
+    <section class="view" id="view-checking">
+      <p class="quiet"><span class="spinner" aria-hidden="true"></span>Checking your PC…</p>
+    </section>
+
+    <!-- First run -->
+    <section class="view" id="view-setup" hidden>
+      <h1>Set up AudioGhost</h1>
+      <p class="lead">AudioGhost runs on your own computer. The first start installs Python, PyTorch, FFmpeg and SAM-Audio, about 6 GB. Models download the first time you separate a sound.</p>
+      <dl class="facts">
+        <div><dt>Graphics card</dt><dd id="fact-gpu"></dd></div>
+        <div><dt>Installs to</dt><dd id="fact-root" class="path"></dd></div>
+        <div><dt>Free space</dt><dd id="fact-space"></dd></div>
+      </dl>
+      <div class="actions">
+        <button class="primary" id="install" type="button">Install</button>
+        <span class="hint" id="install-hint"></span>
+      </div>
+
+      <div class="existing" id="existing" hidden>
+        <h2>Already installed AudioGhost with install.bat?</h2>
+        <p class="quiet">Use that Python environment instead. Nothing is downloaded.</p>
+        <ul id="existing-list"></ul>
+      </div>
+
+      <details class="other">
+        <summary>Use another Python environment</summary>
+        <div class="row">
+          <input id="other-python" type="text" spellcheck="false" placeholder="C:\path\to\python.exe" aria-label="Path to python.exe">
+          <button id="other-use" type="button">Use</button>
+        </div>
+        <p class="error" id="other-error" hidden></p>
+      </details>
+    </section>
+
+    <!-- Installing -->
+    <section class="view" id="view-installing" hidden>
+      <h1>Installing AudioGhost</h1>
+      <p class="lead">This takes 5 to 15 minutes, depending on your connection. You can keep using your PC.</p>
+      <ol class="steps" id="steps">
+        <li>Checking this PC</li>
+        <li>Installing Python 3.11</li>
+        <li>Installing PyTorch (about 2.5 GB)</li>
+        <li>Installing FFmpeg 8.1</li>
+        <li>Installing SAM-Audio</li>
+        <li>Installing AudioGhost's packages</li>
+        <li>Checking the installation</li>
+      </ol>
+      <p class="now" id="now"></p>
+      <details class="log" id="log-box">
+        <summary>Details</summary>
+        <pre id="log"></pre>
+      </details>
+      <div class="actions">
+        <button id="cancel" type="button">Cancel</button>
+      </div>
+    </section>
+
+    <!-- Update -->
+    <section class="view" id="view-update" hidden>
+      <h1>Update available</h1>
+      <p class="lead" id="update-text"></p>
+      <details class="log" id="update-notes-box">
+        <summary>What's new</summary>
+        <pre id="update-notes"></pre>
+      </details>
+      <div class="actions">
+        <button class="primary" id="update-now" type="button">Update and restart</button>
+        <button id="update-later" type="button">Not now</button>
+        <span class="hint" id="update-status" aria-live="polite"></span>
+      </div>
+    </section>
+
+    <!-- Starting -->
+    <section class="view" id="view-starting" hidden>
+      <h1>Starting AudioGhost</h1>
+      <p class="quiet"><span class="spinner" aria-hidden="true"></span><span id="starting-text">Loading the app…</span></p>
+    </section>
+
+    <!-- Problems -->
+    <section class="view" id="view-problem" hidden>
+      <h1 id="problem-title">Something went wrong</h1>
+      <p class="lead" id="problem-text"></p>
+      <div class="actions">
+        <button class="primary" id="retry" type="button">Try again</button>
+        <button id="open-log" type="button">Open the log</button>
+        <button id="reset" type="button" hidden>Set up again</button>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <button class="link" id="open-app-folder" type="button">App folder</button>
+      <span aria-hidden="true">·</span>
+      <button class="link" id="open-logs" type="button">Logs</button>
+      <span aria-hidden="true">·</span>
+      <button class="link" id="open-notices" type="button">Licenses</button>
+    </footer>
+  </main>
+  <script src="launcher.js"></script>
+</body>
+</html>

@@ -22,10 +22,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+import model_license
 import sessions
 from api.separate import _is_video, _save_upload
 from settings import RETENTION_HOURS, read_hf_token
-from workers import queue_state
+from workers import dispatch, queue_state
 
 router = APIRouter()
 
@@ -153,10 +154,21 @@ def separate(sid: str, request: SeparateRequest):
         raise HTTPException(status_code=400, detail=f"quality must be one of {QUALITIES}")
     if request.variant not in VARIANTS:
         raise HTTPException(status_code=400, detail=f"variant must be one of {VARIANTS}")
-    if not read_hf_token():
+    from workers import model_files
+
+    need = model_files.missing_requirement(
+        request.model_size, request.variant, "fp32" if request.use_float32 else "fp16",
+        token=read_hf_token(), license_accepted=model_license.accepted(),
+    )
+    if need == "token":
         raise HTTPException(
             status_code=401,
-            detail="Connect your Hugging Face account first: the SAM-Audio models are gated.",
+            detail="Meta's precision (-tv) checkpoints need a Hugging Face account with access to them: connect it first.",
+        )
+    if need == "license":
+        raise HTTPException(
+            status_code=409,
+            detail="Accept the SAM-Audio license first: AudioGhost downloads the model the first time it is used.",
         )
 
     duration = data["source"]["duration"]
@@ -184,7 +196,7 @@ def separate(sid: str, request: SeparateRequest):
     job_id = str(uuid.uuid4())
     track_ids = sessions.add_tracks(sid, prompts, options, job_id)
     queue_state.enqueue(job_id)
-    separate_session_task.apply_async(args=[sid, track_ids, options], task_id=job_id)
+    dispatch.submit(separate_session_task, args=[sid, track_ids, options], task_id=job_id)
     return {"job_id": job_id, "track_ids": track_ids, "session": present(sessions.load(sid))}
 
 

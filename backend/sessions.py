@@ -371,13 +371,15 @@ def cleanup_if_due(max_age_hours: float) -> int:
     return cleanup(max_age_hours)
 
 
-def recover_interrupted(dead_jobs: Iterable[str] = ()) -> int:
+def recover_interrupted(dead_jobs: Iterable[str] = (), all_active: bool = False) -> int:
     """
     Fail the tracks of jobs that can no longer finish: every track of a job
     that was running when the worker stopped. Celery acknowledges a job when it
     starts, so a restarted worker never resumes it, and its tracks would stay
-    "running" forever. ``dead_jobs``: jobs known to have been running. Called
-    when the worker starts; returns how many tracks were failed.
+    "running" forever. ``dead_jobs``: jobs known to have been running.
+    ``all_active``: fail queued tracks too (the desktop app's queue lives in
+    memory, so nothing survives a restart). Called when the worker starts;
+    returns how many tracks were failed.
     """
     if not SESSION_DIR.exists():
         return 0
@@ -391,14 +393,18 @@ def recover_interrupted(dead_jobs: Iterable[str] = ()) -> int:
             continue
         jobs = set(dead_jobs) | {t.get("job_id") for t in data["tracks"] if t["status"] == "running"}
         jobs.discard(None)
-        if not any(t["status"] in ACTIVE and t.get("job_id") in jobs for t in data["tracks"]):
+
+        def dead(track, jobs=jobs):
+            return track["status"] in ACTIVE and (all_active or track.get("job_id") in jobs)
+
+        if not any(dead(t) for t in data["tracks"]):
             continue
         count = {"n": 0}
 
-        def change(d, jobs=jobs, count=count):
+        def change(d, dead=dead, count=count):
             now = time.time()
             for track in d["tracks"]:
-                if track["status"] in ACTIVE and track.get("job_id") in jobs:
+                if dead(track):
                     track.update(status="failed", message="", error=INTERRUPTED, finished_at=now)
                     count["n"] += 1
 

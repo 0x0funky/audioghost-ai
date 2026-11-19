@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AudioGhost",
+  "version": "1.3.0",
+  "identifier": "ai.audioghost.desktop",
+  "build": {
+    "frontendDist": "../ui",
+    "beforeDevCommand": "node scripts/prepare.mjs",
+    "beforeBuildCommand": "node scripts/prepare.mjs"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "AudioGhost",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 700,
+        "center": true,
+        "backgroundColor": "#0b0b10",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "AudioGhost",
+    "shortDescription": "Pull any sound out of audio or video",
+    "longDescription": "AudioGhost separates any sound you describe from audio or video, on your own GPU, with Meta's SAM-Audio.",
+    "copyright": "AudioGhost contributors. SAM-Audio by Meta, under the SAM License.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "resources/backend/": "backend/",
+      "resources/web/": "web/",
+      "resources/setup/": "setup/",
+      "resources/bin/": "bin/",
+      "resources/THIRD_PARTY_NOTICES.txt": "THIRD_PARTY_NOTICES.txt"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZDNEVDNTUyRjdFNkRFQUYKUldTdjN1YjNVc1ZPL1BXR2tLSHJwbnU2N01UcUtWY2ZGUll2L1hHQVRFai9KemJack5sSUFVaUIK",
+      "endpoints": [
+        "https://github.com/0x0funky/audioghost-ai/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

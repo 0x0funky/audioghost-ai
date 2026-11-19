@@ -3,7 +3,7 @@
 import { AlertTriangle, Check, ChevronDown, Clock3, SlidersHorizontal, X } from "lucide-react";
 import { useState, type RefObject } from "react";
 import { formatDuration } from "@/lib/format";
-import type { PendingPrompt, Quality, Region, SeparationSettings, Session, Track, ModelSize } from "@/lib/types";
+import type { ModelGate, ModelSize, PendingPrompt, Quality, Region, SeparationSettings, Session, Track } from "@/lib/types";
 import styles from "./SeparatePanel.module.css";
 import { Button, Segmented, SectionLabel, Spinner, Switch } from "./ui";
 
@@ -43,7 +43,8 @@ export function SeparatePanel({
   onSeparate,
   submitting,
   blocker,
-  needsAuth,
+  gate,
+  onLicense,
   onConnect,
   inputRef,
   estimate,
@@ -63,7 +64,8 @@ export function SeparatePanel({
   onSeparate: (typed?: string) => Promise<boolean>;
   submitting: boolean;
   blocker: string | null;
-  needsAuth: boolean;
+  gate: ModelGate;
+  onLicense: () => void;
   onConnect: () => void;
   inputRef: RefObject<HTMLInputElement | null>;
   estimate: string | null;
@@ -290,9 +292,17 @@ export function SeparatePanel({
           )}
         </div>
 
-        {needsAuth ? (
+        {gate === "license" ? (
           <div className={styles.callout}>
-            Connect your Hugging Face account to download the SAM-Audio models (they are gated by Meta).
+            The {settings.model_size} model downloads the first time you separate, with no Hugging Face account. It comes
+            with Meta&apos;s SAM License.
+            <Button variant="primary" onClick={onLicense}>
+              Review the license
+            </Button>
+          </div>
+        ) : gate === "token" ? (
+          <div className={styles.callout}>
+            Meta&apos;s precision checkpoints need a Hugging Face account with access to them. The standard ones don&apos;t.
             <Button variant="primary" onClick={onConnect}>
               Connect Hugging Face
             </Button>

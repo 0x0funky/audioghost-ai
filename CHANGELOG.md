@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.3.0 - 2026-11
+
+No Hugging Face account anymore, smaller downloads, and a Windows desktop app.
+
+### New
+- **No Hugging Face account needed.** The SAM-Audio models download from AudioGhost's own copies
+  ([audioghostai](https://huggingface.co/audioghostai)), so there is no access request, no waiting for Meta's
+  approval and no token. Meta's SAM License, which comes with the weights, is shown once and accepted in the app
+  (`--accept-license` in the CLI).
+- **Smaller downloads, same results.**
+  - Small is 1.4 GB, Base 2.7 GB and Large 6.3 GB, against 5.1, 7.7 and 14.9 GB for Meta's checkpoints. A Mac or
+    a CPU runs in fp32 and downloads the fp32 files: 2.4, 5.0 and 12.2 GB.
+  - The transformer is stored in fp16, with no vision encoder and the audio codec shared by all sizes, as safetensors.
+  - Every parameter loads bit-identically to Meta's checkpoints. bf16 and fp32 runs use an fp32 copy.
+  - `model_hub/` builds and publishes the files.
+- Meta's checkpoints already in the Hugging Face cache are used as they are. Downloaded models load offline, with no
+  token. `AUDIOGHOST_MODEL_DIR` points to a local folder of model files for machines without internet.
+- **Desktop app for Windows (beta)** (`desktop/`, Tauri): a one-click installer that sets up its own Python, PyTorch,
+  FFmpeg and SAM-Audio, with no conda, Redis or git, and runs the same UI. It checks for updates on start and installs
+  them (signed with the project's updater key). Installers are built by GitHub Actions from version tags. See
+  `desktop/README.md`.
+- The backend can run in **desktop mode** (`AUDIOGHOST_INPROCESS=1`), with no Redis or Celery worker, and serve the
+  UI itself (`AUDIOGHOST_STATIC_DIR`).
+
+### Changed
+- Meta's `-tv` precision checkpoints are the only models that still need a Hugging Face account.
+- A token saved with Hugging Face's CLI (`hf auth login`) is used when none is saved in the app.
+
 ## v1.2.0 - 2026-11
 
 A new workspace: several sounds per run, each on its own track, a mixer, and exports of exactly what you hear.

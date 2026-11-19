@@ -39,15 +39,7 @@ function summarize(system: SystemStatus | null): { tone: "ok" | "warn" | "bad"; 
   return { tone: "ok", label: `${gpu} · ${model}`, meta };
 }
 
-function StatusChip({
-  system,
-  auth,
-  onConnect,
-}: {
-  system: SystemStatus | null;
-  auth: AuthStatus | null;
-  onConnect: () => void;
-}) {
+function StatusChip({ system, auth }: { system: SystemStatus | null; auth: AuthStatus | null }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const summary = summarize(system);
@@ -96,10 +88,12 @@ function StatusChip({
       );
     }
   }
+  const anyModel = (auth?.downloaded_models ?? []).length > 0;
   checks.push(
-    auth?.authenticated
-      ? { tone: "ok", title: `Hugging Face: ${auth.username ?? "connected"}` }
-      : { tone: "warn", title: "Hugging Face not connected", hint: "The SAM-Audio models are gated: connect a token to download them." },
+    auth?.license_accepted || anyModel
+      ? { tone: "ok", title: anyModel ? "SAM-Audio models on this computer" : "SAM-Audio license accepted",
+          hint: "Models download on first use. No Hugging Face account needed." }
+      : { tone: "warn", title: "SAM-Audio license not accepted yet", hint: "It is shown before the first model download." },
   );
 
   return (
@@ -127,18 +121,6 @@ function StatusChip({
               </div>
             </div>
           ))}
-          {!auth?.authenticated && (
-            <Button
-              variant="primary"
-              size="small"
-              onClick={() => {
-                setOpen(false);
-                onConnect();
-              }}
-            >
-              Connect Hugging Face
-            </Button>
-          )}
         </div>
       )}
     </div>
@@ -160,13 +142,11 @@ export function AppHeader({
   system,
   auth,
   onHome,
-  onConnect,
 }: {
   session?: Session | null;
   system: SystemStatus | null;
   auth: AuthStatus | null;
   onHome: () => void;
-  onConnect: () => void;
 }) {
   const source = session?.source;
   return (
@@ -202,7 +182,7 @@ export function AppHeader({
           History
         </Button>
       )}
-      <StatusChip system={system} auth={auth} onConnect={onConnect} />
+      <StatusChip system={system} auth={auth} />
       <ThemeToggle />
     </header>
   );

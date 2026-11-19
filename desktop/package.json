@@ -1,0 +1,15 @@
+{
+  "name": "audioghost-desktop",
+  "private": true,
+  "version": "1.3.0",
+  "type": "module",
+  "scripts": {
+    "prepare-resources": "node scripts/prepare.mjs",
+    "icons": "tauri icon ../frontend/public/audioghost_logo.png",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

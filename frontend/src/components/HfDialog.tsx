@@ -42,7 +42,8 @@ export function HfDialog({ open, onClose, onConnected }: { open: boolean; onClos
     >
       <ol className={styles.steps}>
         <li>
-          Request access to the SAM-Audio models (approval usually takes a few minutes):{" "}
+          Only needed for Meta&apos;s precision (-tv) checkpoints; the standard models need no account. Request
+          access to Meta&apos;s SAM-Audio models (approval can take a while):{" "}
           <a href="https://huggingface.co/facebook/sam-audio-large" target="_blank" rel="noreferrer">
             facebook/sam-audio-large <ExternalLink size={12} aria-hidden="true" />
           </a>

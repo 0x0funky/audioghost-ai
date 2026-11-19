@@ -8,11 +8,22 @@ import os
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = Path(os.environ.get("AUDIOGHOST_UPLOAD_DIR", BACKEND_DIR / "uploads"))
-OUTPUT_DIR = Path(os.environ.get("AUDIOGHOST_OUTPUT_DIR", BACKEND_DIR / "outputs"))
-TOKEN_FILE = BACKEND_DIR / ".hf_token"
+#: Uploads, results and the saved Hugging Face token. The web version keeps them
+#: next to the code; the desktop app points this at the user's app-data folder.
+DATA_DIR = Path(os.environ.get("AUDIOGHOST_DATA_DIR", BACKEND_DIR))
+UPLOAD_DIR = Path(os.environ.get("AUDIOGHOST_UPLOAD_DIR", DATA_DIR / "uploads"))
+OUTPUT_DIR = Path(os.environ.get("AUDIOGHOST_OUTPUT_DIR", DATA_DIR / "outputs"))
+TOKEN_FILE = Path(os.environ.get("AUDIOGHOST_TOKEN_FILE", DATA_DIR / ".hf_token"))
 
 REDIS_URL = os.environ.get("AUDIOGHOST_REDIS_URL", "redis://localhost:6379/0")
+
+#: Desktop app: run separations inside the API process, one at a time, with
+#: in-memory bookkeeping, so neither Redis nor a Celery worker is needed.
+INPROCESS = os.environ.get("AUDIOGHOST_INPROCESS", "") == "1"
+
+#: Serve the exported web UI from this folder at "/" (the desktop app), so the
+#: UI and the API share one origin.
+STATIC_DIR = os.environ.get("AUDIOGHOST_STATIC_DIR") or None
 
 #: Uploads and results older than this are deleted (0 = keep forever).
 #: Matches Celery's result_expires, after which the UI can't reach them anyway.
@@ -42,9 +53,19 @@ for _directory in (UPLOAD_DIR, OUTPUT_DIR, SESSION_DIR):
 
 
 def read_hf_token():
-    """Token saved by the UI, falling back to the standard HF_TOKEN env var."""
+    """
+    The token saved in the UI; else the HF_TOKEN env var; else the token Hugging
+    Face's own CLI saved (``hf auth login``), so a machine that is already logged
+    in works right away. Disconnecting in the UI leaves an empty token file,
+    which turns both fallbacks off.
+    """
     if TOKEN_FILE.exists():
-        token = TOKEN_FILE.read_text(encoding="utf-8").strip()
-        if token:
-            return token
-    return os.environ.get("HF_TOKEN") or None
+        return TOKEN_FILE.read_text(encoding="utf-8").strip() or None
+    if os.environ.get("HF_TOKEN"):
+        return os.environ["HF_TOKEN"]
+    try:
+        from huggingface_hub import get_token
+
+        return get_token()
+    except Exception:  # noqa: BLE001 - no CLI token, or an old huggingface_hub
+        return None

@@ -98,8 +98,21 @@ export interface SystemStatus {
 export interface AuthStatus {
   authenticated: boolean;
   username: string | null;
+  /** Ready on this computer: "facebook/sam-audio-<size>[-tv]" or "audioghostai/sam-audio-<size>". */
   downloaded_models: string[];
+  /** Meta's SAM License, accepted once before the first download of AudioGhost's copies. */
+  license_accepted?: boolean;
 }
+
+export interface LicenseInfo {
+  version: string;
+  url: string;
+  accepted: boolean;
+  text: string;
+}
+
+/** What stops a separation from downloading its model: the license, or (for -tv) a Hugging Face account. */
+export type ModelGate = "license" | "token" | null;
 
 export interface Peaks {
   duration: number;

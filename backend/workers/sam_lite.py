@@ -56,7 +56,7 @@ warnings.filterwarnings("ignore", message="Please use the new API settings to co
 # Constants
 # --------------------------------------------------------------------------- #
 
-MODEL_SIZES = ("small", "base", "large")
+from workers.model_files import MODEL_SIZES  # noqa: E402  (one list for API and worker)
 
 #: Midpoint ODE steps per preset. Each step costs two transformer evaluations.
 #: "balanced" matches Meta's default (midpoint, step_size = 2/32).
@@ -77,12 +77,18 @@ class SeparationCancelled(Exception):
     """Raised when ``should_cancel()`` returns True during separation."""
 
 
-def model_repo_id(model_size: str, variant: str = "default") -> str:
-    """``facebook/sam-audio-{size}`` or the ``-tv`` variant (better target accuracy)."""
-    if model_size not in MODEL_SIZES:
-        raise ValueError(f"Unknown model size {model_size!r}; expected one of {MODEL_SIZES}")
-    suffix = "-tv" if variant == "tv" else ""
-    return f"facebook/sam-audio-{model_size}{suffix}"
+# Where the weights come from (Meta's gated repos or AudioGhost's public copies),
+# shared with the API process, which must not import torch.
+from workers.model_files import (  # noqa: E402,F401
+    LOCAL_MODEL_DIR,
+    MODEL_ORG,
+    SHARED_REPO,
+    cached as _cached,
+    is_downloaded,
+    model_repo_id,
+    needs_token,
+    weight_files,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -257,6 +263,9 @@ class LiteModel:
 def _hf_download(repo_id: str, filename: str, token: Optional[str]) -> str:
     from huggingface_hub import hf_hub_download
 
+    if not needs_token(repo_id):
+        token = False  # public repo: never send a (possibly stale) token
+
     try:
         return hf_hub_download(repo_id=repo_id, filename=filename, token=token)
     except Exception as err:  # translate the common Hub errors into advice
@@ -277,19 +286,18 @@ def ensure_downloaded(
     repo_id: str,
     token: Optional[str] = None,
     progress: Optional[Callable[[float, str], None]] = None,
+    precision: str = "fp16",
 ) -> bool:
     """
-    Make sure ``config.json`` and ``checkpoint.pt`` are in the HF cache,
-    reporting download progress of the (multi-GB) checkpoint.
+    Make sure every file the model needs (``weight_files``) is on this computer,
+    reporting download progress of the (multi-GB) weights.
 
     Returns True if something had to be downloaded.
     """
     import threading
 
-    from huggingface_hub import try_to_load_from_cache
-
-    cached = try_to_load_from_cache(repo_id, "checkpoint.pt")
-    if isinstance(cached, str) and os.path.exists(cached):
+    missing = [(repo, name) for repo, name in weight_files(repo_id, precision) if not _cached(repo, name)]
+    if not missing:
         return False
 
     # huggingface_hub (incl. the Xet backend, which pre-allocates the file so
@@ -347,8 +355,8 @@ def ensure_downloaded(
         watcher = threading.Thread(target=watch, daemon=True)
         watcher.start()
     try:
-        _hf_download(repo_id, "config.json", token)
-        _hf_download(repo_id, "checkpoint.pt", token)
+        for repo, name in missing:
+            _hf_download(repo, name, token)
     finally:
         stop.set()
         if original_context is not None:
@@ -434,13 +442,46 @@ DTYPES = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
 
 
 def _cached_or_download(repo_id: str, filename: str, token: Optional[str]) -> str:
-    """Use the local HF cache without any network round-trip when possible."""
-    from huggingface_hub import try_to_load_from_cache
+    """Use a local copy without any network round-trip when possible."""
+    return _cached(repo_id, filename) or _hf_download(repo_id, filename, token)
 
-    cached = try_to_load_from_cache(repo_id, filename)
-    if isinstance(cached, str) and os.path.exists(cached):
-        return cached
-    return _hf_download(repo_id, filename, token)
+
+def _iter_weights(path: str):
+    """``(name, tensor)`` pairs from a safetensors file or Meta's checkpoint.pt, lazily."""
+    if path.endswith(".safetensors"):
+        from safetensors import safe_open
+
+        with safe_open(path, framework="pt", device="cpu") as f:
+            for key in f.keys():
+                if not key.startswith(_SKIPPED_PREFIXES):
+                    yield key, f.get_tensor(key)
+    else:
+        state = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
+        for key, value in state.items():
+            if not key.startswith(_SKIPPED_PREFIXES):
+                yield key, value
+
+
+def _copy_weights(model: torch.nn.Module, paths: Sequence[str]) -> Tuple[List[str], List[str]]:
+    """
+    Copy the weights into the model one tensor at a time (the same cast as
+    ``load_state_dict``, without holding a second copy of a multi-GB model in
+    RAM). Returns ``(missing, unexpected)`` keys.
+    """
+    targets = model.state_dict(keep_vars=True)
+    loaded, unexpected = set(), []
+    with torch.no_grad():
+        for path in paths:
+            for key, value in _iter_weights(path):
+                target = targets.get(key)
+                if target is None:
+                    unexpected.append(key)
+                    continue
+                if tuple(target.shape) != tuple(value.shape):
+                    raise RuntimeError(f"{key}: checkpoint shape {tuple(value.shape)} != model {tuple(target.shape)}")
+                target.copy_(value)
+                loaded.add(key)
+    return [k for k in targets if k not in loaded], unexpected
 
 
 def load_lite_model(
@@ -477,8 +518,9 @@ def load_lite_model(
 
     mm = importlib.import_module("sam_audio.model.model")
 
-    config_path = _cached_or_download(repo_id, "config.json", token)
-    checkpoint_path = _cached_or_download(repo_id, "checkpoint.pt", token)
+    files = weight_files(repo_id, precision)
+    config_path = _cached_or_download(*files[0], token)
+    weight_paths = [_cached_or_download(repo, name, token) for repo, name in files[1:]]
     with open(config_path, encoding="utf-8") as f:
         raw_config = json.load(f)
     raw_config.update(visual_ranker=None, text_ranker=None, span_predictor=None)
@@ -504,11 +546,9 @@ def load_lite_model(
             skip_init, _DefaultDtype(dit_dtype):
         model = mm.SAMAudio(cfg)
 
-    state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True, mmap=True)
-    state_dict = {k: v for k, v in state_dict.items() if not k.startswith(_SKIPPED_PREFIXES)}
-    # SAMAudio overrides load_state_dict (and ignores strict=False), so call
-    # the base implementation and validate the result ourselves.
-    missing, unexpected = torch.nn.Module.load_state_dict(model, state_dict, strict=False)
+    # SAMAudio overrides load_state_dict (and ignores strict=False), so the
+    # weights are copied in directly and the result validated here.
+    missing, unexpected = _copy_weights(model, weight_paths)
     missing = [k for k in missing if not k.startswith(_EXTERNAL_PREFIXES)]
     if missing or unexpected:
         raise RuntimeError(
@@ -516,7 +556,6 @@ def load_lite_model(
             f"(missing={missing[:5]}, unexpected={unexpected[:5]}). "
             "Re-install sam-audio at the commit pinned in README.md."
         )
-    del state_dict
     gc.collect()
 
     model.eval()
