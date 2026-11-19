@@ -8,7 +8,8 @@
   approval and no token. Meta's SAM License, which comes with the weights, is shown once and accepted in the app
   (`--accept-license` in the CLI).
 - **Smaller downloads, same results.**
-  - Small is 1.4 GB, Base 2.7 GB and Large 6.3 GB, against 5.1, 7.7 and 14.9 GB for Meta's checkpoints.
+  - Small is 1.4 GB, Base 2.7 GB and Large 6.3 GB, against 5.1, 7.7 and 14.9 GB for Meta's checkpoints. A Mac or
+    a CPU runs in fp32 and downloads the fp32 files: 2.4, 5.0 and 12.2 GB.
   - The transformer is stored in fp16, with no vision encoder and the audio codec shared by all sizes, as safetensors.
   - Every parameter loads bit-identically to Meta's checkpoints. bf16 and fp32 runs use an fp32 copy.
   - `model_hub/` builds and publishes the files.

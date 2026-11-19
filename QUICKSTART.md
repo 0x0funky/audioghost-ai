@@ -71,7 +71,7 @@ npm run dev
 ## 首次使用
 
 1. 不需要 Hugging Face 帳號。第一次會顯示 Meta 的 SAM License（模型權重附帶的授權），在開始頁「This computer」卡片按「Review」或第一次按 Separate 時同意一次即可
-2. 第一次分離會從 AudioGhost 的模型副本（huggingface.co/audioghostai）自動下載模型（Small 1.4 GB / Base 2.7 GB / Large 6.3 GB，另加各尺寸共用的 0.9 GB 文字編碼器），進度會顯示在該軌道上
+2. 第一次分離會從 AudioGhost 的模型副本（huggingface.co/audioghostai）自動下載模型（Small 1.4 GB / Base 2.7 GB / Large 6.3 GB，另加各尺寸共用的 0.9 GB 文字編碼器；Mac 或沒有 NVIDIA 顯卡的電腦用 fp32 執行，會改下載 fp32 檔：2.4 / 5.0 / 12.2 GB），進度會顯示在該軌道上
 3. 電腦裡已經有 Meta 原版模型的話會直接使用，不會重新下載
 4. 只有選用 Meta 的 -tv 精準模型才需要 Hugging Face 帳號：到該模型頁面申請存取，再用「Connect」貼上 Read 權限的 Token
 

@@ -34,7 +34,7 @@ A real field recording ("New Orleans ambience" by cognito perceptu, CC0). AudioG
 <details>
 <summary>Start screen</summary>
 
-![Start screen: drop zone, recent sessions, and a card showing the GPU, Hugging Face access and downloaded models](docs/images/v1.2-start.png)
+![Start screen: drop zone, recent sessions, and a card showing the GPU, the model license and the downloaded models](docs/images/v1.2-start.png)
 
 </details>
 
@@ -227,7 +227,7 @@ Navigate to `http://localhost:3000`
 
 ### 10. Accept the model license
 
-The first time, AudioGhost shows Meta's **SAM License**, which comes with the SAM-Audio weights. Accept it once (the start screen's *Review* button, or when you first press *Separate*). The model then downloads on first use: Small 1.4 GB, Base 2.7 GB, Large 6.3 GB, plus the 0.9 GB text encoder that all sizes share. You need no Hugging Face account.
+The first time, AudioGhost shows Meta's **SAM License**, which comes with the SAM-Audio weights. Accept it once (the start screen's *Review* button, or when you first press *Separate*). The model then downloads on first use: Small 1.4 GB, Base 2.7 GB, Large 6.3 GB, plus the 0.9 GB text encoder that all sizes share. A Mac or a computer without an NVIDIA GPU runs in fp32 and downloads the fp32 files instead: 2.4, 5.0 and 12.2 GB. You need no Hugging Face account.
 
 The models come from [audioghostai](https://huggingface.co/audioghostai), AudioGhost's copies of Meta's weights:
 - **What changed:** the transformer is stored in fp16 (it loads into exactly the values AudioGhost ran before), there is no vision encoder, and the files are safetensors. `model_hub/` builds them.

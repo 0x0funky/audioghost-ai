@@ -13,11 +13,12 @@ import { Button, ErrorText, IconButton, ProgressBar, SectionLabel } from "./ui";
 const ACCEPT =
   "audio/*,video/*,.mp3,.wav,.flac,.m4a,.ogg,.opus,.aac,.mp4,.mov,.mkv,.webm,.avi,.m4v,.mpeg";
 
-// Download sizes of AudioGhost's copies (fp16 transformer + the shared codec), in GB of 10^9 bytes.
+// Download sizes of AudioGhost's copies with the shared codec, in GB of 10^9 bytes: the fp16 files
+// on NVIDIA GPUs, the fp32 files on a Mac or a CPU (they run in fp32).
 const MODELS = [
-  { size: "small", label: "Small", gb: "1.4 GB" },
-  { size: "base", label: "Base", gb: "2.7 GB" },
-  { size: "large", label: "Large", gb: "6.3 GB" },
+  { size: "small", label: "Small", fp16: "1.4 GB", fp32: "2.4 GB" },
+  { size: "base", label: "Base", fp16: "2.7 GB", fp32: "5.0 GB" },
+  { size: "large", label: "Large", fp16: "6.3 GB", fp32: "12.2 GB" },
 ];
 
 function Setup({
@@ -36,6 +37,7 @@ function Setup({
   const allModels = MODELS.every((m) => haveModel(m.size));
   const licensed = !!auth?.license_accepted || allModels;
   const device = system?.device;
+  const fp32Files = device?.device === "cpu" || device?.device === "mps";
   const tvCount = MODELS.filter((m) => downloaded.has(`facebook/sam-audio-${m.size}-tv`)).length;
   const workerReady = system?.reachable && system.redis && system.worker && !system.worker_starting;
   return (
@@ -73,9 +75,11 @@ function Setup({
         <div className={styles.grow}>
           <div className={styles.checkTitle}>{licensed ? "SAM-Audio models ready" : "SAM-Audio license"}</div>
           <div className={styles.checkHint}>
-            {licensed
-              ? "Models download on first use. No Hugging Face account needed."
-              : "The models come with Meta's SAM License. Accept it once; then they download on first use, with no account."}
+            {!licensed
+              ? "The models come with Meta's SAM License. Accept it once; then they download on first use, with no account."
+              : allModels
+                ? "All three sizes are on this computer. No Hugging Face account needed."
+                : "Models download on first use. No Hugging Face account needed."}
           </div>
         </div>
         {!licensed && (
@@ -91,7 +95,7 @@ function Setup({
           return (
             <div key={model.size} className={styles.modelRow}>
               <span className={styles.modelName}>{model.label}</span>
-              <span className={styles.small}>{model.gb}</span>
+              <span className={styles.small}>{(fp32Files ? model.fp32 : model.fp16)}</span>
               <span className={`${styles.modelState} ${have ? styles.good : styles.muted}`}>
                 {have ? (
                   <>
