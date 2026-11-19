@@ -15,6 +15,10 @@ from pathlib import Path
 
 LICENSE = Path(__file__).resolve().parents[1] / "backend" / "licenses" / "SAM_LICENSE.txt"
 TITLES = {"small": "Small", "base": "Base", "large": "Large"}
+PASSES = [
+    ("license, card, config, fp16 model and codec", {"ignore_patterns": ["*.fp32.safetensors"]}),
+    ("fp32 model", {"allow_patterns": ["*.fp32.safetensors"]}),
+]
 
 CARD_MODEL = """---
 license: other
@@ -144,11 +148,18 @@ def main():
 
     api = HfApi()
     print("uploading as", api.whoami()["name"], flush=True)
-    for repo, folder in folders:
+    for repo, _ in folders:
         api.create_repo(repo, repo_type="model", private=False, exist_ok=True)
-        api.upload_folder(repo_id=repo, folder_path=str(folder), repo_type="model",
-                          commit_message="AudioGhost copy of Meta's SAM-Audio weights (SAM License)")
-        print(f"published https://huggingface.co/{repo}", flush=True)
+    # The fp16 files first: the app's default works before the larger fp32 copies are up.
+    for what, patterns in PASSES:
+        for repo, folder in folders:
+            if "allow_patterns" in patterns and not any(folder.glob(patterns["allow_patterns"][0])):
+                continue  # the shared repo has no fp32 copy
+            api.upload_folder(repo_id=repo, folder_path=str(folder), repo_type="model",
+                              commit_message=f"AudioGhost copy of Meta's SAM-Audio weights: {what}", **patterns)
+            print(f"{repo}: uploaded {what}", flush=True)
+    for repo, _ in folders:
+        print(f"published https://huggingface.co/{repo}")
 
 
 if __name__ == "__main__":
