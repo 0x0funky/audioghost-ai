@@ -60,15 +60,41 @@ npm run dev          # debug build with a live window
 - the backend (without tests, outputs or a saved token);
 - the static UI export (`frontend: npm run build:static`);
 - the setup script;
-- `uv.exe`.
+- `uv.exe`;
+- `THIRD_PARTY_NOTICES.txt` (`scripts/notices.mjs`): the licenses of what the installer redistributes (uv,
+  the Rust crates in the app, the UI's JavaScript packages and fonts). The launcher's *Licenses* link opens it.
 
 Set `AUDIOGHOST_SKIP_WEB=1` to reuse the last UI export.
 
 To drive the window from tests, start the app with
 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9340` and attach a DevTools client.
 
+## Releases and updates
+
+Pushing a version tag builds the installer on GitHub Actions (`.github/workflows/desktop-release.yml`)
+and attaches it to a draft release, with its signature and `latest.json`, the update feed:
+
+1. Set the version in `src-tauri/tauri.conf.json`, `package.json` and `src-tauri/Cargo.toml`.
+2. `git tag v1.3.0 && git push origin v1.3.0`
+3. Check the draft release, write the notes (with the installer's SHA-256) and publish it.
+
+Installed apps read `releases/latest/download/latest.json` when they start. They wait at most 4 s, so
+a slow or missing connection doesn't hold them up. If a newer version is out, they offer it; the update
+downloads, its signature is checked, and the installer replaces the app and reopens it. The private
+environment, settings and sessions stay.
+
+Updates must be signed with the updater key. Its public half is in `tauri.conf.json`. The private half
+is the `TAURI_SIGNING_PRIVATE_KEY` repository secret, and the maintainer keeps a backup. Without it,
+installed apps can't be updated any more and would have to be reinstalled by hand.
+
+Local builds sign too: set `TAURI_SIGNING_PRIVATE_KEY` to the key (its text or its path) and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to an empty string. To try an update, serve a `latest.json` on this
+machine and start the app with `AUDIOGHOST_UPDATE_URL=http://127.0.0.1:<port>/latest.json`; a plain
+http feed also needs a build with `plugins.updater.dangerousInsecureTransportProtocol` set to true.
+
 ## Not done yet
 
-- **Code signing:** Windows SmartScreen warns about the unsigned installer.
-- **Auto-update.**
+- **Code signing:** Windows SmartScreen warns about the unsigned installer until it has enough downloads.
+  SignPath Foundation signs open-source projects for free; their certificate needs builds from CI, which
+  the release workflow already does.
 - **macOS:** the shell builds there, but setup is Windows-only for now, and Macs run SAM-Audio on the CPU.

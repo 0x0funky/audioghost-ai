@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, Url};
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 /// How long the backend may take to answer /health (first start imports a lot).
 const START_TIMEOUT: Duration = Duration::from_secs(120);
@@ -45,6 +46,8 @@ struct AppState {
     setup: Mutex<Option<Child>>,
     url: Mutex<Option<String>>,
     launcher: Mutex<Option<Url>>,
+    /// A newer version found by `check_update`, waiting for `install_update`.
+    update: Mutex<Option<Update>>,
     stopping: AtomicBool,
     #[cfg(windows)]
     job: Mutex<Option<KillOnClose>>,
@@ -535,6 +538,58 @@ async fn start(app: AppHandle) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || start_backend(&app)).await.map_err(err)?
 }
 
+// --------------------------------------------------------------------------- updates
+
+#[derive(Serialize)]
+struct UpdateInfo {
+    version: String,
+    notes: String,
+}
+
+#[derive(Clone, Serialize)]
+struct UpdateProgress {
+    downloaded: u64,
+    total: Option<u64>,
+}
+
+/// Ask the release feed whether a newer version is out. The feed is the latest GitHub
+/// release's latest.json (tauri.conf.json); AUDIOGHOST_UPDATE_URL replaces it for testing.
+#[tauri::command]
+async fn check_update(app: AppHandle, state: State<'_, AppState>) -> Result<Option<UpdateInfo>, String> {
+    let handle = app.clone();
+    let mut builder = app
+        .updater_builder()
+        .timeout(Duration::from_secs(20))
+        // The installer replaces the files the backend runs from: stop it first.
+        .on_before_exit(move || stop_backend(&handle.state::<AppState>()));
+    if let Ok(url) = std::env::var("AUDIOGHOST_UPDATE_URL") {
+        builder = builder.endpoints(vec![Url::parse(&url).map_err(err)?]).map_err(err)?;
+    }
+    let update = builder.build().map_err(err)?.check().await.map_err(err)?;
+    let info = update.as_ref().map(|u| UpdateInfo { version: u.version.clone(), notes: u.body.clone().unwrap_or_default() });
+    *state.update.lock().unwrap() = update;
+    Ok(info)
+}
+
+/// Download the update, check its signature and run its installer, which closes the app and
+/// opens the new version.
+#[tauri::command]
+async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let update = state.update.lock().unwrap().take().ok_or("There is no update to install.")?;
+    let mut downloaded: u64 = 0;
+    let bytes = update
+        .download(
+            move |chunk, total| {
+                downloaded += chunk as u64;
+                let _ = app.emit("update-progress", UpdateProgress { downloaded, total });
+            },
+            || {},
+        )
+        .await
+        .map_err(err)?;
+    update.install(bytes).map_err(err)
+}
+
 // --------------------------------------------------------------------------- folders
 
 #[tauri::command]
@@ -545,6 +600,7 @@ fn open_folder(app: AppHandle, which: String) -> Result<(), String> {
         "app" => paths.root.clone(),
         "setup-log" => paths.logs().join("setup.log"),
         "backend-log" => paths.logs().join("backend.log"),
+        "notices" => paths.resources.join("THIRD_PARTY_NOTICES.txt"),
         _ => return Err(format!("Unknown folder: {which}")),
     };
     if target.extension().is_none() {
@@ -574,6 +630,7 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
         .setup(|app| {
             let state = app.state::<AppState>();
@@ -596,6 +653,8 @@ fn main() {
             cancel_install,
             use_python,
             start,
+            check_update,
+            install_update,
             open_folder,
             reset
         ])

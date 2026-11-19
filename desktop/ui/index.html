@@ -74,6 +74,21 @@
       </div>
     </section>
 
+    <!-- Update -->
+    <section class="view" id="view-update" hidden>
+      <h1>Update available</h1>
+      <p class="lead" id="update-text"></p>
+      <details class="log" id="update-notes-box">
+        <summary>What's new</summary>
+        <pre id="update-notes"></pre>
+      </details>
+      <div class="actions">
+        <button class="primary" id="update-now" type="button">Update and restart</button>
+        <button id="update-later" type="button">Not now</button>
+        <span class="hint" id="update-status" aria-live="polite"></span>
+      </div>
+    </section>
+
     <!-- Starting -->
     <section class="view" id="view-starting" hidden>
       <h1>Starting AudioGhost</h1>
@@ -95,6 +110,8 @@
       <button class="link" id="open-app-folder" type="button">App folder</button>
       <span aria-hidden="true">·</span>
       <button class="link" id="open-logs" type="button">Logs</button>
+      <span aria-hidden="true">·</span>
+      <button class="link" id="open-notices" type="button">Licenses</button>
     </footer>
   </main>
   <script src="launcher.js"></script>

@@ -3,11 +3,13 @@
 //   web/       the UI as a static export (frontend: npm run build:static)
 //   setup/     the first-run installer
 //   bin/uv.exe the Python package manager the installer uses
+//   THIRD_PARTY_NOTICES.txt  licenses of what the installer redistributes (scripts/notices.mjs)
 // --skip-web (or AUDIOGHOST_SKIP_WEB=1) reuses an existing web/ build.
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeNotices } from "./notices.mjs";
 
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repo = resolve(desktop, "..");
@@ -47,5 +49,7 @@ function findUv() {
   return first.trim();
 }
 mkdirSync(join(out, "bin"), { recursive: true });
-cpSync(findUv(), join(out, "bin", process.platform === "win32" ? "uv.exe" : "uv"));
+const uv = join(out, "bin", process.platform === "win32" ? "uv.exe" : "uv");
+cpSync(findUv(), uv);
+writeNotices({ uv });
 console.log(`[prepare] resources ready in ${out}`);

@@ -30,6 +30,7 @@ async function boot() {
     return;
   }
   show("checking");
+  const update = checkForUpdate(); // in parallel with the PC check
   let status;
   try {
     status = await invoke("status");
@@ -38,10 +39,58 @@ async function boot() {
     return;
   }
   $("version").textContent = `Version ${status.version}`;
-  if (status.ready) {
-    start();
-  } else {
+  if (!status.ready) {
     setup(status);
+    return;
+  }
+  const available = await update;
+  if (available) {
+    offerUpdate(available, status.version);
+  } else {
+    start();
+  }
+}
+
+// --------------------------------------------------------------------------- updates
+
+/** A newer version, or null. Never holds up the start for long: no answer in 4 s means none. */
+async function checkForUpdate() {
+  const giveUp = new Promise((resolve) => setTimeout(() => resolve(null), 4000));
+  try {
+    return await Promise.race([invoke("check_update"), giveUp]);
+  } catch (err) {
+    console.warn("update check failed:", err); // offline, or no release feed yet
+    return null;
+  }
+}
+
+function offerUpdate(update, current) {
+  $("update-text").textContent = `AudioGhost ${update.version} is out (you have ${current}). The update downloads, installs and reopens the app; your sessions and settings stay.`;
+  $("update-notes").textContent = update.notes.trim();
+  $("update-notes-box").hidden = !update.notes.trim();
+  $("update-status").textContent = "";
+  $("update-now").disabled = false;
+  $("update-later").disabled = false;
+  show("update");
+}
+
+async function installUpdate() {
+  $("update-now").disabled = true;
+  $("update-later").disabled = true;
+  $("update-status").textContent = "Downloading…";
+  const off = await listen("update-progress", ({ payload }) => {
+    const { downloaded, total } = payload;
+    $("update-status").textContent = total
+      ? `Downloading… ${Math.min(100, Math.floor((downloaded / total) * 100))}%`
+      : `Downloading… ${Math.round(downloaded / 1048576)} MB`;
+  });
+  try {
+    await invoke("install_update"); // the installer closes this window and opens the new version
+    $("update-status").textContent = "Installing…";
+  } catch (err) {
+    off();
+    $("update-status").textContent = `The update didn't install: ${err}`;
+    $("update-later").disabled = false;
   }
 }
 
@@ -180,4 +229,7 @@ $("open-log").addEventListener("click", () => openFolder(logFor));
 $("reset").addEventListener("click", async () => { await invoke("reset"); boot(); });
 $("open-app-folder").addEventListener("click", () => openFolder("app"));
 $("open-logs").addEventListener("click", () => openFolder("logs"));
+$("open-notices").addEventListener("click", () => openFolder("notices"));
+$("update-now").addEventListener("click", installUpdate);
+$("update-later").addEventListener("click", () => start());
 boot();
