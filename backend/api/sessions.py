@@ -57,6 +57,7 @@ class SeparateRequest(BaseModel):
     use_float32: bool = False
     chunk_duration: float = 25.0
     seed: Optional[int] = None
+    cleanup: bool = False  # "Clean up leftovers": the track clears its traces from everything else
 
 
 class ExportRequest(BaseModel):
@@ -192,6 +193,7 @@ def separate(sid: str, request: SeparateRequest):
         "use_float32": request.use_float32,
         "chunk_duration": max(5.0, min(60.0, request.chunk_duration)),
         "seed": request.seed,
+        "cleanup": request.cleanup,
     }
     job_id = str(uuid.uuid4())
     track_ids = sessions.add_tracks(sid, prompts, options, job_id)

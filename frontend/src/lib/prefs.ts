@@ -32,6 +32,7 @@ export const DEFAULT_SETTINGS: SeparationSettings = {
   stereo: true,
   use_float32: false,
   chunk_duration: 25,
+  cleanup: false,
 };
 
 export type Theme = "dark" | "light";

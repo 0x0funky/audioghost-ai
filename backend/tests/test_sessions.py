@@ -191,6 +191,34 @@ def test_removing_a_done_track_puts_its_sound_back(store):
     assert sessions.load(sid)["rest"] is None
 
 
+def test_everything_else_never_reuses_a_file_name(store):
+    """
+    The files are served as immutable, so a name must never come back with other
+    audio. Separate, remove, separate again: "everything else" used to be
+    rest.1.wav both times, and the app kept playing the first one from its cache.
+    """
+    session, (a, b, c) = make_session(store, channels=1)
+    sid = session["id"]
+    folder = sessions.session_dir(sid)
+    names = []
+    for attempt in range(3):
+        tid = sessions.add_tracks(sid, [{"text": "baby crying"}], {}, f"job-{attempt}")[0]
+        finish(session, tid, a, b + c, b + c)
+        names.append(sessions.load(sid)["rest"]["file"])
+        sessions.remove_done_track(sid, tid)  # nothing left: "everything else" goes away
+        assert sessions.load(sid)["rest"] is None
+    assert names == ["rest.1.wav", "rest.2.wav", "rest.3.wav"]
+
+    # Putting a removed track's sound back makes a new name too, after the highest one so far.
+    ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}], {}, "job-9")
+    finish(session, ids[0], a, b + c, b + c)
+    finish(session, ids[1], b, a + c, c)
+    sessions.remove_done_track(sid, ids[0])
+    assert sessions.load(sid)["rest"]["file"] == "rest.6.wav"
+    np.testing.assert_allclose(read(folder / "rest.6.wav")[:, 0], a + c, atol=1e-5)
+    assert sorted(p.name for p in folder.glob("rest.*.wav")) == ["rest.6.wav"]
+
+
 def test_finish_after_removal_discards_audio(store):
     session, (a, _, _) = make_session(store)
     sid = session["id"]
@@ -349,6 +377,7 @@ def test_api_upload_separate_and_remove(client):
     assert [t["prompt"] for t in tracks] == ["violin", "piano"]
     assert tracks[0]["anchors"] == [["+", 0.5, 1.0], ["-", 1.9, 2.0]]  # clamped; too short dropped
     assert all(t["status"] == "queued" and "job_id" not in t for t in tracks)
+    assert args[2]["cleanup"] is False  # "Clean up leftovers" is off unless asked for
 
     res = client.delete(f"/api/sessions/{sid}/tracks/{body['track_ids'][0]}")
     assert res.json() == {"removed": body["track_ids"][0]}
@@ -357,6 +386,15 @@ def test_api_upload_separate_and_remove(client):
     assert client.get("/api/sessions").json()["sessions"][0]["id"] == sid
     assert client.delete(f"/api/sessions/{sid}").status_code == 200
     assert client.get(f"/api/sessions/{sid}").status_code == 404
+
+
+def test_api_passes_clean_up_leftovers_to_the_worker(client):
+    sid = upload(client).json()["id"]
+    res = client.post(f"/api/sessions/{sid}/separate", json={"prompts": [{"text": "baby crying"}], "cleanup": True})
+    assert res.status_code == 202, res.text
+    args, _ = client.queued[0]
+    assert args[2]["cleanup"] is True
+    assert res.json()["session"]["tracks"][0]["settings"]["cleanup"] is True
 
 
 def test_api_removes_a_running_track_nobody_is_running(client, monkeypatch):
