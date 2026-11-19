@@ -59,6 +59,19 @@ def test_what_a_separation_still_needs(cache):
     assert need("small", "default", "fp32", token=None, license_accepted=False) == "license"
 
 
+def test_worker_checks_before_downloading(cache, monkeypatch):
+    from workers import tasks
+
+    monkeypatch.setattr(model_license, "accepted", lambda: False)
+    with pytest.raises(RuntimeError, match="license"):
+        tasks._check_model_requirement("small", "default", False, None)
+    with pytest.raises(RuntimeError, match="Hugging Face"):
+        tasks._check_model_requirement("small", "tv", False, None)
+    monkeypatch.setattr(model_license, "accepted", lambda: True)
+    tasks._check_model_requirement("small", "default", False, None)
+    tasks._check_model_requirement("small", "tv", False, "hf_x")
+
+
 def test_local_model_dir_is_used_without_download(tmp_path, monkeypatch):
     folder = tmp_path / "sam-audio-small"
     folder.mkdir()

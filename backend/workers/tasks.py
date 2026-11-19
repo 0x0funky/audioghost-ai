@@ -51,7 +51,7 @@ def _precision(use_float32: bool, device) -> str:
 def _check_model_requirement(model_size: str, variant: str, use_float32: bool, token) -> None:
     """Fail early when the model must be downloaded but can't be yet."""
     import model_license
-    from workers import model_files
+    from workers import model_files, sam_lite
 
     precision = _precision(use_float32, sam_lite.resolve_device())
     need = model_files.missing_requirement(model_size, variant, precision, token=token,
