@@ -308,6 +308,8 @@ def client(store, monkeypatch):
 
     queued = []
     monkeypatch.setattr(api_sessions, "read_hf_token", lambda: "hf_test")
+    # Whatever models this machine has cached: the license counts as accepted.
+    monkeypatch.setattr(api_sessions.model_license, "accepted", lambda: True)
     monkeypatch.setattr(api_sessions.queue_state, "enqueue", lambda job: None)
     monkeypatch.setattr(api_sessions.queue_state, "jobs_ahead", lambda job: 0)
     monkeypatch.setattr(

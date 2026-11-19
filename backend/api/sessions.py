@@ -22,6 +22,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+import model_license
 import sessions
 from api.separate import _is_video, _save_upload
 from settings import RETENTION_HOURS, read_hf_token
@@ -153,10 +154,21 @@ def separate(sid: str, request: SeparateRequest):
         raise HTTPException(status_code=400, detail=f"quality must be one of {QUALITIES}")
     if request.variant not in VARIANTS:
         raise HTTPException(status_code=400, detail=f"variant must be one of {VARIANTS}")
-    if not read_hf_token():
+    from workers import model_files
+
+    need = model_files.missing_requirement(
+        request.model_size, request.variant, "fp32" if request.use_float32 else "fp16",
+        token=read_hf_token(), license_accepted=model_license.accepted(),
+    )
+    if need == "token":
         raise HTTPException(
             status_code=401,
-            detail="Connect your Hugging Face account first: the SAM-Audio models are gated.",
+            detail="Meta's precision (-tv) checkpoints need a Hugging Face account with access to them: connect it first.",
+        )
+    if need == "license":
+        raise HTTPException(
+            status_code=409,
+            detail="Accept the SAM-Audio license first: AudioGhost downloads the model the first time it is used.",
         )
 
     duration = data["source"]["duration"]

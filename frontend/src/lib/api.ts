@@ -2,6 +2,7 @@ import type {
   Anchor,
   AuthStatus,
   ExportFormat,
+  LicenseInfo,
   Peaks,
   SeparationSettings,
   Session,
@@ -74,6 +75,8 @@ export const api = {
     }
   },
   auth: () => request<AuthStatus>("/api/auth/status"),
+  license: () => request<LicenseInfo>("/api/models/license"),
+  acceptLicense: () => request<{ accepted: boolean; version: string }>("/api/models/license/accept", { method: "POST" }),
   login: (token: string) =>
     request<{ success: boolean; username: string }>("/api/auth/login", json("POST", { token })),
   sessions: () => request<{ sessions: SessionSummary[] }>("/api/sessions"),

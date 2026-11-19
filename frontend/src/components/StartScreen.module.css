@@ -266,6 +266,33 @@
   color: var(--text-2);
 }
 
+.dialogLead {
+  margin: 0 0 12px;
+  color: var(--text-2);
+}
+
+.licenseText {
+  margin: 0;
+  max-height: min(46vh, 380px);
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: 12px/1.55 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.licenseLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
 .steps {
   display: flex;
   flex-direction: column;

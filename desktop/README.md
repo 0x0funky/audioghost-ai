@@ -24,9 +24,11 @@ needs a terminal, conda, Redis or git.
      crashes.
    - If the backend stops on its own, the window goes back to the launcher and offers the log.
 
-Models are not bundled. They come from the Hugging Face cache, so models downloaded by the web
-version (or by any other tool, `HF_HOME` included) are reused. A token saved with `hf auth login`
-is picked up automatically.
+Models are not bundled. They download on first use from AudioGhost's public copies
+([audioghostai](https://huggingface.co/audioghostai)), with no Hugging Face account. The SAM License
+is accepted once in the app. Models already in the Hugging Face cache (`HF_HOME` included), Meta's
+or AudioGhost's, are reused. Only Meta's `-tv` checkpoints need an account; a token saved with
+`hf auth login` is picked up automatically.
 
 ## Where things live
 

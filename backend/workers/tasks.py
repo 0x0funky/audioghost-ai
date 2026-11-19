@@ -48,6 +48,22 @@ def _precision(use_float32: bool, device) -> str:
     return preferred if preferred in ("fp16", "bf16") else "fp16"
 
 
+def _check_model_requirement(model_size: str, variant: str, use_float32: bool, token) -> None:
+    """Fail early when the model must be downloaded but can't be yet."""
+    import model_license
+    from workers import model_files
+
+    precision = _precision(use_float32, sam_lite.resolve_device())
+    need = model_files.missing_requirement(model_size, variant, precision, token=token,
+                                           license_accepted=model_license.accepted())
+    if need == "token":
+        raise RuntimeError("Meta's precision (-tv) checkpoints need a Hugging Face account with access "
+                           "to them. Connect it in the app first.")
+    if need == "license":
+        raise RuntimeError("Accept the SAM-Audio license in the app first; it is shown before the first "
+                           "model download.")
+
+
 def _get_model(model_size: str, variant: str, use_float32: bool, token, progress):
     """Return the cached lite model, evicting a different one first."""
     from workers import sam_lite
@@ -66,7 +82,7 @@ def _get_model(model_size: str, variant: str, use_float32: bool, token, progress
             sam_lite.unload(_MODEL_CACHE.pop(old_key))
 
         sam_lite.ensure_downloaded(
-            repo_id, token, lambda frac, msg: progress(8 + int(frac * 17), msg)
+            repo_id, token, lambda frac, msg: progress(8 + int(frac * 17), msg), precision=precision
         )
         progress(26, f"Loading {repo_id.split('/')[-1]} ({precision})...")
         lite = sam_lite.load_lite_model(repo_id, device=device, precision=precision, token=token)
@@ -253,8 +269,7 @@ def separate_audio_task(
         anchor_list = sam_lite.normalize_anchors(anchors)
 
         token = read_hf_token()
-        if not token:
-            raise RuntimeError("HuggingFace token not found. Click 'Connect HuggingFace' first.")
+        _check_model_requirement(model_size, model_variant, use_float32, token)
 
         progress(5, "Preparing...")
         lite = _get_model(model_size, model_variant, use_float32, token, progress)
@@ -386,8 +401,8 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
 
     try:
         token = read_hf_token()
-        if not token:
-            raise RuntimeError("Connect your Hugging Face account first: the SAM-Audio models are gated.")
+        _check_model_requirement(options.get("model_size", "base"), options.get("variant", "default"),
+                                 bool(options.get("use_float32")), token)
 
         last_note = {"time": 0.0}
 

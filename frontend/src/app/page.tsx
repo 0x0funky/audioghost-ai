@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { HfDialog } from "@/components/HfDialog";
+import { LicenseDialog } from "@/components/LicenseDialog";
 import { StartScreen } from "@/components/StartScreen";
 import { Button, Spinner } from "@/components/ui";
 import { Workspace } from "@/components/Workspace";
@@ -17,17 +18,19 @@ function SessionView({
   auth,
   onHome,
   onConnect,
+  onLicense,
 }: {
   id: string;
   system: SystemStatus | null;
   auth: AuthStatus | null;
   onHome: () => void;
   onConnect: () => void;
+  onLicense: () => void;
 }) {
   const { session, error, refresh, setSession } = useSession(id);
   return (
     <>
-      <AppHeader session={session} system={system} auth={auth} onHome={onHome} onConnect={onConnect} />
+      <AppHeader session={session} system={system} auth={auth} onHome={onHome} />
       {session ? (
         <Workspace
           session={session}
@@ -36,6 +39,7 @@ function SessionView({
           system={system}
           auth={auth}
           onConnect={onConnect}
+          onLicense={onLicense}
         />
       ) : error?.status === 404 ? (
         <div className={workspaceStyles.state}>
@@ -60,6 +64,7 @@ function App() {
   const { status: system } = useSystem();
   const { auth, refresh: refreshAuth } = useAuth();
   const [hfOpen, setHfOpen] = useState(false);
+  const [licenseOpen, setLicenseOpen] = useState(false);
 
   const home = () => router.push("/");
   const open = (target: Session | string) => router.push(`/?session=${typeof target === "string" ? target : target.id}`);
@@ -74,14 +79,22 @@ function App() {
           auth={auth}
           onHome={home}
           onConnect={() => setHfOpen(true)}
+          onLicense={() => setLicenseOpen(true)}
         />
       ) : (
         <>
-          <AppHeader system={system} auth={auth} onHome={home} onConnect={() => setHfOpen(true)} />
-          <StartScreen system={system} auth={auth} onConnect={() => setHfOpen(true)} onOpen={open} />
+          <AppHeader system={system} auth={auth} onHome={home} />
+          <StartScreen
+            system={system}
+            auth={auth}
+            onConnect={() => setHfOpen(true)}
+            onLicense={() => setLicenseOpen(true)}
+            onOpen={open}
+          />
         </>
       )}
       <HfDialog open={hfOpen} onClose={() => setHfOpen(false)} onConnected={() => void refreshAuth()} />
+      <LicenseDialog open={licenseOpen} onClose={() => setLicenseOpen(false)} onAccepted={() => void refreshAuth()} />
     </>
   );
 }

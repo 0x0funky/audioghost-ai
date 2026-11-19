@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from api import auth, separate, sessions, tasks
+from api import auth, models, separate, sessions, tasks
 from settings import (FRONTEND_ORIGIN_REGEX, FRONTEND_ORIGINS, INPROCESS, OUTPUT_DIR, RETENTION_HOURS,
                       STATIC_DIR)
 
@@ -63,6 +63,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(separate.router, prefix="/api/separate", tags=["Separation"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(sessions.router, prefix="/api/sessions", tags=["Sessions"])
+app.include_router(models.router, prefix="/api/models", tags=["Models"])
 
 
 if not STATIC_DIR:

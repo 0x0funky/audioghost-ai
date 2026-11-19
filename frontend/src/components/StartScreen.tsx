@@ -13,14 +13,28 @@ import { Button, ErrorText, IconButton, ProgressBar, SectionLabel } from "./ui";
 const ACCEPT =
   "audio/*,video/*,.mp3,.wav,.flac,.m4a,.ogg,.opus,.aac,.mp4,.mov,.mkv,.webm,.avi,.m4v,.mpeg";
 
+// Download sizes of AudioGhost's copies (fp16 transformer + the shared codec), in GB of 10^9 bytes.
 const MODELS = [
-  { size: "small", label: "Small", gb: "5.1 GB" },
-  { size: "base", label: "Base", gb: "7.7 GB" },
-  { size: "large", label: "Large", gb: "14.9 GB" },
+  { size: "small", label: "Small", gb: "1.4 GB" },
+  { size: "base", label: "Base", gb: "2.7 GB" },
+  { size: "large", label: "Large", gb: "6.3 GB" },
 ];
 
-function Setup({ system, auth, onConnect }: { system: SystemStatus | null; auth: AuthStatus | null; onConnect: () => void }) {
+function Setup({
+  system,
+  auth,
+  onConnect,
+  onLicense,
+}: {
+  system: SystemStatus | null;
+  auth: AuthStatus | null;
+  onConnect: () => void;
+  onLicense: () => void;
+}) {
   const downloaded = new Set(auth?.downloaded_models ?? []);
+  const haveModel = (size: string) => [...downloaded].some((repo) => repo.endsWith(`/sam-audio-${size}`));
+  const allModels = MODELS.every((m) => haveModel(m.size));
+  const licensed = !!auth?.license_accepted || allModels;
   const device = system?.device;
   const tvCount = MODELS.filter((m) => downloaded.has(`facebook/sam-audio-${m.size}-tv`)).length;
   const workerReady = system?.reachable && system.redis && system.worker && !system.worker_starting;
@@ -51,31 +65,29 @@ function Setup({ system, auth, onConnect }: { system: SystemStatus | null; auth:
         </div>
       </div>
       <div className={styles.check}>
-        {auth?.authenticated ? (
+        {licensed ? (
           <Check size={18} className={`${styles.checkIcon} ${styles.good}`} aria-hidden="true" />
         ) : (
           <AlertTriangle size={18} className={`${styles.checkIcon} ${styles.attention}`} aria-hidden="true" />
         )}
         <div className={styles.grow}>
-          <div className={styles.checkTitle}>
-            {auth?.authenticated ? "Hugging Face connected" : "Hugging Face not connected"}
-          </div>
+          <div className={styles.checkTitle}>{licensed ? "SAM-Audio models ready" : "SAM-Audio license"}</div>
           <div className={styles.checkHint}>
-            {auth?.authenticated
-              ? `Signed in as ${auth.username ?? "your account"}`
-              : "The SAM-Audio models are gated: request access, then connect a token."}
+            {licensed
+              ? "Models download on first use. No Hugging Face account needed."
+              : "The models come with Meta's SAM License. Accept it once; then they download on first use, with no account."}
           </div>
         </div>
-        {!auth?.authenticated && (
-          <Button size="small" variant="primary" onClick={onConnect}>
-            Connect
+        {!licensed && (
+          <Button size="small" variant="primary" onClick={onLicense}>
+            Review
           </Button>
         )}
       </div>
       <div className={styles.models}>
         <SectionLabel>Models</SectionLabel>
         {MODELS.map((model) => {
-          const have = downloaded.has(`facebook/sam-audio-${model.size}`);
+          const have = haveModel(model.size);
           return (
             <div key={model.size} className={styles.modelRow}>
               <span className={styles.modelName}>{model.label}</span>
@@ -96,11 +108,17 @@ function Setup({ system, auth, onConnect }: { system: SystemStatus | null; auth:
         <div className={styles.modelRow}>
           <span className={styles.stack}>
             <span className={styles.modelName}>Precision checkpoints</span>
-            <span className={styles.small}>Optional, pick the right sound more reliably</span>
+            <span className={styles.small}>Optional, from Meta: need a Hugging Face account with access</span>
           </span>
-          <span className={`${styles.modelState} ${tvCount ? styles.good : styles.muted}`}>
-            {tvCount ? `${tvCount} of 3 downloaded` : "On first use"}
-          </span>
+          {tvCount || auth?.authenticated ? (
+            <span className={`${styles.modelState} ${tvCount ? styles.good : styles.muted}`}>
+              {tvCount ? `${tvCount} of 3 downloaded` : "On first use"}
+            </span>
+          ) : (
+            <Button size="small" onClick={onConnect}>
+              Connect
+            </Button>
+          )}
         </div>
       </div>
     </section>
@@ -111,11 +129,13 @@ export function StartScreen({
   system,
   auth,
   onConnect,
+  onLicense,
   onOpen,
 }: {
   system: SystemStatus | null;
   auth: AuthStatus | null;
   onConnect: () => void;
+  onLicense: () => void;
   onOpen: (session: Session | string) => void;
 }) {
   const { sessions, error: listError, refresh } = useRecentSessions();
@@ -275,7 +295,7 @@ export function StartScreen({
       </main>
 
       <aside className={styles.side}>
-        <Setup system={system} auth={auth} onConnect={onConnect} />
+        <Setup system={system} auth={auth} onConnect={onConnect} onLicense={onLicense} />
         <section className={styles.card} aria-labelledby="new-heading">
           <h2 id="new-heading" className={styles.h2}>
             New in v1.2

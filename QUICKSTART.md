@@ -70,11 +70,10 @@ npm run dev
 
 ## 首次使用
 
-1. 在開始頁右側「This computer」卡片點「Connect」（或點右上角的狀態標籤）
-2. 到 https://huggingface.co/facebook/sam-audio-large 申請存取權限（若之後使用 -tv 精準模型出現 403，也到該模型頁面申請）
-3. 建立 Access Token：https://huggingface.co/settings/tokens
-4. 貼上 Token 並連線
-5. 第一次分離會自動下載模型（Small 5.1 GB / Base 7.7 GB / Large 14.9 GB），進度會顯示在該軌道上
+1. 不需要 Hugging Face 帳號。第一次會顯示 Meta 的 SAM License（模型權重附帶的授權），在開始頁「This computer」卡片按「Review」或第一次按 Separate 時同意一次即可
+2. 第一次分離會從 AudioGhost 的模型副本（huggingface.co/audioghostai）自動下載模型（Small 1.4 GB / Base 2.7 GB / Large 6.3 GB，另加各尺寸共用的 0.9 GB 文字編碼器），進度會顯示在該軌道上
+3. 電腦裡已經有 Meta 原版模型的話會直接使用，不會重新下載
+4. 只有選用 Meta 的 -tv 精準模型才需要 Hugging Face 帳號：到該模型頁面申請存取，再用「Connect」貼上 Read 權限的 Token
 
 ## 功能使用（v1.2）
 

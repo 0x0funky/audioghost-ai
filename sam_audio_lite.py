@@ -44,20 +44,35 @@ def main() -> int:
     parser.add_argument("--end", type=float)
     parser.add_argument("--seed", type=int, help="for reproducible results")
     parser.add_argument("--format", default="wav", choices=["wav", "flac", "mp3"])
+    parser.add_argument("--accept-license", action="store_true",
+                        help="accept Meta's SAM License, which comes with the downloaded weights")
     args = parser.parse_args()
 
+    import model_license
     from settings import read_hf_token
-    from workers import audio_io, sam_lite
+    from workers import audio_io, model_files, sam_lite
 
     source = Path(args.input)
     if not source.is_file():
         parser.error(f"{source} does not exist")
     token = read_hf_token()
-    repo = sam_lite.model_repo_id(args.model, "tv" if args.tv else "default")
+    variant = "tv" if args.tv else "default"
+    precision = "fp32" if args.fp32 else "fp16"
+    if args.accept_license:
+        model_license.accept()
+    need = model_files.missing_requirement(args.model, variant, precision, token=token,
+                                           license_accepted=model_license.accepted())
+    if need == "license":
+        raise SystemExit("The model is downloaded on first use and comes with Meta's SAM License:\n"
+                         f"  {model_license.URL}\nRun again with --accept-license to accept it.")
+    if need == "token":
+        raise SystemExit("Meta's -tv checkpoints need a Hugging Face account with access to them: "
+                         "log in with `hf auth login` (or set HF_TOKEN).")
+    repo = sam_lite.model_repo_id(args.model, variant)
 
     started = time.perf_counter()
-    sam_lite.ensure_downloaded(repo, token, lambda f, m: print(f"\r{m}   ", end="", flush=True))
-    lite = sam_lite.load_lite_model(repo, precision="fp32" if args.fp32 else "fp16", token=token)
+    sam_lite.ensure_downloaded(repo, token, lambda f, m: print(f"\r{m}   ", end="", flush=True), precision=precision)
+    lite = sam_lite.load_lite_model(repo, precision=precision, token=token)
     print(f"\rLoaded {repo} ({lite.precision}) on {lite.device} in {lite.load_seconds:.1f}s")
 
     audio = audio_io.load_audio(source, lite.sample_rate, stereo=args.stereo)

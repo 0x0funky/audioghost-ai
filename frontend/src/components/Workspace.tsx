@@ -10,6 +10,7 @@ import { DEFAULT_SETTINGS, loadPref, savePref } from "@/lib/prefs";
 import type {
   AuthStatus,
   ChannelState,
+  ModelGate,
   PendingPrompt,
   Region,
   SeparationSettings,
@@ -101,6 +102,20 @@ function Transport({
   );
 }
 
+/**
+ * What a separation with these settings still needs before its model can download.
+ * Nothing once the model is on this computer (Meta's checkpoint or AudioGhost's copy).
+ */
+function modelGate(auth: AuthStatus | null, settings: SeparationSettings): ModelGate {
+  if (!auth) return null;
+  const ready = auth.downloaded_models ?? [];
+  if (settings.variant === "tv") {
+    return ready.includes(`facebook/sam-audio-${settings.model_size}-tv`) || auth.authenticated ? null : "token";
+  }
+  const have = ready.some((repo) => repo.endsWith(`/sam-audio-${settings.model_size}`));
+  return have || auth.license_accepted ? null : "license";
+}
+
 export function Workspace({
   session,
   onSessionChange,
@@ -108,6 +123,7 @@ export function Workspace({
   system,
   auth,
   onConnect,
+  onLicense,
 }: {
   session: Session;
   onSessionChange: (session: Session) => void;
@@ -115,6 +131,7 @@ export function Workspace({
   system: SystemStatus | null;
   auth: AuthStatus | null;
   onConnect: () => void;
+  onLicense: () => void;
 }) {
   const source = session.source;
   const [player] = useState(() => new MultiTrackPlayer(source.duration));
@@ -417,7 +434,8 @@ export function Workspace({
         onSeparate={separate}
         submitting={submitting}
         blocker={blocker}
-        needsAuth={!!auth && !auth.authenticated}
+        gate={modelGate(auth, settings)}
+        onLicense={onLicense}
         onConnect={onConnect}
         inputRef={inputRef}
         estimate={estimate}

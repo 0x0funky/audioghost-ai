@@ -17,7 +17,7 @@ const skipWeb = process.argv.includes("--skip-web") || process.env.AUDIOGHOST_SK
 // An allow-list, not a deny-list: the backend folder also holds runtime data
 // (sessions, uploads, model checkpoints, a saved token) that must never ship.
 const SKIP_DIRS = new Set(["tests", "outputs", "uploads", "__pycache__"]);
-const KEEP_FILES = new Set(["requirements.txt", "constraints.txt"]);
+const KEEP_FILES = new Set(["requirements.txt", "constraints.txt", "SAM_LICENSE.txt"]);
 const keepBackend = (source) => {
   const name = basename(source);
   if (statSync(source).isDirectory()) return !name.startsWith(".") && !SKIP_DIRS.has(name);

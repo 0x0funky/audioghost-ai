@@ -9,12 +9,11 @@ from fastapi.concurrency import run_in_threadpool
 from huggingface_hub import HfApi
 from pydantic import BaseModel
 
+import model_license
 from settings import TOKEN_FILE, read_hf_token
 
 router = APIRouter()
 
-MODEL_REPOS = [f"facebook/sam-audio-{size}{suffix}"
-               for size in ("small", "base", "large") for suffix in ("", "-tv")]
 ACCESS_CHECK_REPO = "facebook/sam-audio-large"
 
 
@@ -28,6 +27,8 @@ class AuthStatus(BaseModel):
     model_name: Optional[str] = None
     downloaded_models: List[str] = []
     username: Optional[str] = None
+    #: Meta's SAM License, accepted in the app before the first download of AudioGhost's copies.
+    license_accepted: bool = False
 
 
 def get_saved_token() -> Optional[str]:
@@ -45,17 +46,19 @@ def save_token(token: str):
 
 
 def downloaded_models() -> List[str]:
-    """SAM-Audio checkpoints already in the HuggingFace cache (no network)."""
-    from huggingface_hub import try_to_load_from_cache
+    """
+    Models that are ready on this computer (no network): Meta's checkpoints
+    (``facebook/sam-audio-<size>[-tv]``) or AudioGhost's copies
+    (``audioghostai/sam-audio-<size>``, default fp16 files).
+    """
+    from workers import model_files
 
     found = []
-    for repo in MODEL_REPOS:
-        try:
-            cached = try_to_load_from_cache(repo, "checkpoint.pt")
-        except Exception:  # noqa: BLE001
-            cached = None
-        if isinstance(cached, str) and os.path.exists(cached):
-            found.append(repo)
+    for size in model_files.MODEL_SIZES:
+        for repo in (f"facebook/sam-audio-{size}", f"{model_files.MODEL_ORG}/sam-audio-{size}",
+                     f"facebook/sam-audio-{size}-tv"):
+            if model_files.is_downloaded(repo):
+                found.append(repo)
     return found
 
 
@@ -85,6 +88,7 @@ async def get_auth_status():
         model_name=models[0] if models else None,
         downloaded_models=models,
         username=username,
+        license_accepted=model_license.accepted(),
     )
 
 

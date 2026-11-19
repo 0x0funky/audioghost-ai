@@ -114,7 +114,7 @@ A real field recording ("New Orleans ambience" by cognito perceptu, CC0). AudioG
 - **Windows 10/11** or **Linux (x86_64)** with an **NVIDIA GPU**, or a **Mac with Apple Silicon** (CPU only for now, so expect minutes rather than seconds; Intel Macs are not supported by PyTorch 2.9)
 - **NVIDIA GPU**: 6 GB+ for Small, 8 GB+ for Base, 12 GB+ for Large (measured peaks: 4.2 / 5.4 / 8.9 GB with 25 s chunks; shorter chunks need less)
 - **Anaconda / Miniconda**, **Node.js 18+** and **git**
-- A **HuggingFace account** with access to [facebook/sam-audio-large](https://huggingface.co/facebook/sam-audio-large) (gated; approval can take a while)
+- **No Hugging Face account**: the models download from AudioGhost's own copies ([audioghostai](https://huggingface.co/audioghostai)) the first time you use them. A Hugging Face account with access to Meta's repos is only needed for the optional `-tv` precision checkpoints.
 
 > 💡 PyTorch, FFmpeg and Redis are installed by the installers. RTX 50-series cards get the CUDA 12.8 build automatically.
 
@@ -225,12 +225,14 @@ npm run dev
 
 Navigate to `http://localhost:3000`
 
-### 10. Connect HuggingFace
+### 10. Accept the model license
 
-1. Click **Connect HuggingFace**
-2. Request access at https://huggingface.co/facebook/sam-audio-large (if a `-tv` Precision model later returns 403, request access on its page too)
-3. Create an access token: https://huggingface.co/settings/tokens
-4. Paste the token and connect
+The first time, AudioGhost shows Meta's **SAM License**, which comes with the SAM-Audio weights. Accept it once (the start screen's *Review* button, or when you first press *Separate*). The model then downloads on first use: Small 1.4 GB, Base 2.7 GB, Large 6.3 GB, plus the 0.9 GB text encoder that all sizes share. You need no Hugging Face account.
+
+The models come from [audioghostai](https://huggingface.co/audioghostai), AudioGhost's copies of Meta's weights:
+- **What changed:** the transformer is stored in fp16 (it loads into exactly the values AudioGhost ran before), there is no vision encoder, and the files are safetensors. `model_hub/` builds them.
+- **Meta's own checkpoints:** if they are already in your Hugging Face cache, AudioGhost uses them as they are.
+- **The `-tv` precision checkpoints:** these are still Meta's only. Use *Connect* on the start screen with a Read token from an account that has access.
 
 ## Usage
 
@@ -347,7 +349,10 @@ Something else already uses port 3000, so Next.js picked the next free port (300
 The chip in the top-right corner turns amber or red; click it for details. Use `start.bat` (or `./start.sh`), which starts Redis, the API, the worker and the UI. For manual setups, start Redis before the worker ([#5](https://github.com/0x0funky/audioghost-ai/issues/5)). Right after start-up the worker needs about 20 s to load its libraries ("Worker starting..."); jobs you start meanwhile simply wait in the queue.
 
 ### HuggingFace 401 / 403
-Reconnect in the UI. 403 means your account hasn't been granted access to that model yet - open the model's page on HuggingFace (the `-tv` checkpoints are separate repos) and request access there.
+Only Meta's `-tv` precision checkpoints need an account. Reconnect in the UI. A 403 means your account hasn't been granted access to that model yet: open the model's page on Hugging Face (the `-tv` checkpoints are separate repos) and request access there.
+
+### Offline use
+Once a model is downloaded it loads from the Hugging Face cache without network or token. To install on a machine without internet, copy the files from [audioghostai](https://huggingface.co/audioghostai) into a folder laid out like the repos (`sam-audio-<size>/`, `sam-audio-shared/`) and set `AUDIOGHOST_MODEL_DIR` to it. The text encoder (`t5-base`) still loads from the Hugging Face cache, so copy that cache too and point `HF_HOME` at it.
 
 ## Project Structure
 
