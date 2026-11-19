@@ -44,7 +44,7 @@ A real field recording ("New Orleans ambience" by cognito perceptu, CC0). AudioG
 <details>
 <summary>Start screen</summary>
 
-![Start screen: drop zone, recent sessions, and a card showing the GPU, the model license and the downloaded models](docs/images/v1.2-start.png)
+![Start screen: drop zone, recent sessions, and a card showing the GPU, the model license and the downloaded models](docs/images/v1.3-start.png)
 
 </details>
 
