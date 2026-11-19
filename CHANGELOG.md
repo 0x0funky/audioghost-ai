@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.3.0 - 2026-11
+
+No Hugging Face account anymore, smaller downloads, and a Windows desktop app.
 
 ### New
 - **No Hugging Face account needed.** The SAM-Audio models download from AudioGhost's own copies
@@ -15,8 +17,10 @@
   - `model_hub/` builds and publishes the files.
 - Meta's checkpoints already in the Hugging Face cache are used as they are. Downloaded models load offline, with no
   token. `AUDIOGHOST_MODEL_DIR` points to a local folder of model files for machines without internet.
-- **Desktop app for Windows** (`desktop/`, Tauri): a one-click installer that sets up its own Python, PyTorch, FFmpeg
-  and SAM-Audio, with no conda, Redis or git, and runs the same UI. See `desktop/README.md`.
+- **Desktop app for Windows (beta)** (`desktop/`, Tauri): a one-click installer that sets up its own Python, PyTorch,
+  FFmpeg and SAM-Audio, with no conda, Redis or git, and runs the same UI. It checks for updates on start and installs
+  them (signed with the project's updater key). Installers are built by GitHub Actions from version tags. See
+  `desktop/README.md`.
 - The backend can run in **desktop mode** (`AUDIOGHOST_INPROCESS=1`), with no Redis or Celery worker, and serve the
   UI itself (`AUDIOGHOST_STATIC_DIR`).
 

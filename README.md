@@ -6,13 +6,18 @@
 
 Describe the sounds you want (vocals, a dog barking, traffic) and AudioGhost puts each one on its own track. Mix the tracks and export exactly what you hear, or your video with the new soundtrack. Powered by Meta's [SAM-Audio](https://github.com/facebookresearch/sam-audio), running locally on your own GPU, with no account to create.
 
-![Version](https://img.shields.io/badge/version-1.2-green) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
+![Version](https://img.shields.io/badge/version-1.3-green) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-## 🆕 What's new
+## 🆕 What's new in v1.3
 
-**No Hugging Face account needed anymore.** The models now download from AudioGhost's own copies ([audioghostai](https://huggingface.co/audioghostai)) the first time you use them: no access request, no waiting for Meta's approval, no token. The downloads are also less than half the size (Small 1.4 GB instead of 5.1 GB, Large 6.3 GB instead of 14.9 GB), and they load into the same weights as Meta's checkpoints, bit for bit. [How it works](#first-run-accept-the-model-license)
+| | |
+|---|---|
+| 🔓 **No Hugging Face account** | The models download from AudioGhost's own copies ([audioghostai](https://huggingface.co/audioghostai)) the first time you use them: no access request, no waiting for Meta's approval, no token ([how it works](#first-run-accept-the-model-license)) |
+| 📦 **Smaller downloads, same results** | Small 1.4 GB instead of 5.1 GB, Large 6.3 GB instead of 14.9 GB, and they load into the same weights as Meta's checkpoints, bit for bit |
+| 🖥️ **Windows desktop app (beta)** | One installer: no conda, Redis or git, and it keeps itself up to date ([download](#windows-desktop-app-beta)) |
 
-### v1.2
+<details>
+<summary>v1.2: several sounds per run, a mixer, export what you hear</summary>
 
 | | |
 |---|---|
@@ -23,6 +28,8 @@ Describe the sounds you want (vocals, a dog barking, traffic) and AudioGhost put
 | 🔄 **Nothing gets lost** | Sessions survive page reloads and restarts; recent work stays one click away for 24 hours |
 | 🧭 **A new interface** | One workspace instead of a long form, system status in the top bar, dark and light themes, keyboard friendly ([screenshots](#-demo)) |
 | 🔗 **Everything else, made by the model** | Each new sound is removed from what the earlier ones left, so *Everything else* is real model output that still sounds like your recording (24 s stereo café recording: 9 s for the first sound, 14 s for each one after it; Large, Balanced, RTX 4090) |
+
+</details>
 
 v1.1 made separation 4–6× faster, fixed the installers and added macOS & Linux. Full list in the [CHANGELOG](CHANGELOG.md).
 
@@ -87,12 +94,20 @@ A real field recording ("New Orleans ambience" by cognito perceptu, CC0). AudioG
 
 - **Windows 10/11** or **Linux (x86_64)** with an **NVIDIA GPU**, or a **Mac with Apple Silicon** (CPU only for now, so expect minutes rather than seconds; Intel Macs are not supported by PyTorch 2.9)
 - **NVIDIA GPU**: 6 GB+ for Small, 8 GB+ for Base, 12 GB+ for Large (measured peaks: 4.2 / 5.4 / 8.9 GB with 25 s chunks; shorter chunks need less)
-- **Anaconda / Miniconda**, **Node.js 18+** and **git**
+- **Anaconda / Miniconda**, **Node.js 18+** and **git** (not needed for the Windows desktop app)
 - **No Hugging Face account**: the models download from AudioGhost's own copies the first time you use them. An account with access to Meta's repos is only needed for the optional `-tv` precision checkpoints.
 
 > 💡 PyTorch, FFmpeg and Redis are installed by the installers. RTX 50-series cards get the CUDA 12.8 build automatically.
 
 ## 🚀 One-Click Installation (Recommended)
+
+### Windows desktop app (beta)
+
+The easiest way on Windows: **[download the installer](https://github.com/0x0funky/audioghost-ai/releases/latest)** (`AudioGhost_<version>_x64-setup.exe`, about 18 MB) and run it. On first start it sets up what it needs (Python, PyTorch, FFmpeg and SAM-Audio, about 6 GB) with no conda, Redis or git, and later it tells you when an update is out.
+
+- Windows 10/11 (64-bit), about 10 GB of free space, an NVIDIA GPU (it runs on the CPU too, very slowly)
+- The installer isn't code-signed yet, so Windows may say *Windows protected your PC*: click **More info**, then **Run anyway**. The release notes list each installer's SHA-256.
+- Already installed AudioGhost with `install.bat`? The app offers to use that environment instead of downloading another one.
 
 ### Windows
 
@@ -405,7 +420,7 @@ audioghost-ai/
 │   └── tests/                # unit tests (python -m pytest backend/tests)
 ├── frontend/                 # Next.js app: src/components (Workspace, Timeline, SeparatePanel, ...),
 │                             #   src/lib (multi-track player, API client)
-├── desktop/                  # Windows desktop app (Tauri), in testing: see desktop/README.md
+├── desktop/                  # Windows desktop app (Tauri): see desktop/README.md
 ├── model_hub/                # builds and publishes the model files on huggingface.co/audioghostai
 ├── docs/images/              # screenshots
 ├── scripts/benchmark.py      # performance benchmark
@@ -419,7 +434,7 @@ audioghost-ai/
 ## 🗺️ Roadmap
 
 - 🖱️ **Visual Prompting** - click an object in the video to isolate its sound (SAM 2.1 / [SAM 3.1](https://huggingface.co/facebook/sam3.1) masks + SAM-Audio `-tv`)
-- 🖥️ **Desktop app** - one Windows installer with no conda, Redis or git to set up (in testing, see `desktop/`)
+- 🍏 **Desktop app for macOS** - the Windows app's one-click setup on Apple Silicon
 - 🎵 **Bundled samples** - royalty-free clips to try AudioGhost without your own files
 - 🎚️ **Specialised engines** for standard music stems (BS-/Mel-RoFormer) next to SAM-Audio for "any sound"
 - 🍏 **Apple GPU (MPS) by default** once it's verified on more Macs (opt in today with `AUDIOGHOST_DEVICE=mps`)

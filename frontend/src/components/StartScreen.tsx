@@ -302,13 +302,12 @@ export function StartScreen({
         <Setup system={system} auth={auth} onConnect={onConnect} onLicense={onLicense} />
         <section className={styles.card} aria-labelledby="new-heading">
           <h2 id="new-heading" className={styles.h2}>
-            New in v1.2
+            New in v1.3
           </h2>
           <ul className={styles.bullets}>
-            <li>Several sounds in one run, each on its own track</li>
-            <li>A mixer: volume, mute and solo per track, plus everything else</li>
-            <li>Export exactly what you hear, or the video with your mix</li>
-            <li>Your work survives a page reload</li>
+            <li>No Hugging Face account: the models download on first use</li>
+            <li>Less than half the download size, with the same results</li>
+            <li>A Windows desktop app (beta) that keeps itself up to date</li>
           </ul>
         </section>
       </aside>
