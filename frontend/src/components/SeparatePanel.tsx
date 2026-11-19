@@ -100,6 +100,7 @@ export function SeparatePanel({
     settings.variant === "tv" ? "precision checkpoint" : "standard checkpoint",
     settings.use_float32 ? "full FP32" : null,
     `${settings.chunk_duration} s chunks`,
+    settings.cleanup ? "clean up leftovers" : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -269,6 +270,12 @@ export function SeparatePanel({
                 onChange={(use_float32) => set({ use_float32 })}
                 title="Full FP32 transformer"
                 hint="More GPU memory and slower; the default already keeps the sensitive math in FP32."
+              />
+              <Switch
+                checked={settings.cleanup}
+                onChange={(cleanup) => set({ cleanup })}
+                title="Clean up leftovers"
+                hint="Uses each separated sound to clear its traces from Everything else. A sound that overlaps it can come out a little thinner."
               />
               <div className={styles.range}>
                 <label htmlFor="chunk-length" className={styles.rangeHead}>

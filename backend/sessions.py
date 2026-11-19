@@ -20,7 +20,11 @@ left. Playback picks the best source for the mix (``mix_plan``): the original
 when nothing is changed, the model's "without" when one sound is changed, the
 chain plus the tracks otherwise. Files are never rewritten in place, only
 replaced by new names, so a browser streaming one is never cut off (and Windows
-never refuses a replace because the file is open).
+never refuses a replace because the file is open). A name is never used twice
+in a session either: the API serves these files as immutable, so a returning
+name would play its old audio from the browser's cache. That is why the
+"everything else" revision (``rest_rev``) only goes up, even after every track
+has been removed.
 
 Audio math streams through the files in blocks, so hour-long recordings don't
 need gigabytes of RAM.
@@ -514,6 +518,18 @@ def _match_stereo_image(original: Path, wav):
     return torch.from_numpy(np.stack([gains[0] * mono, gains[1] * mono]).astype(np.float32))
 
 
+def next_rest_rev(data: dict) -> int:
+    """
+    The next "everything else" revision, also recorded as ``data["rest_rev"]``. It
+    only goes up within a session: ``rest.<rev>.wav`` is served as immutable, so
+    after every track is removed and "everything else" starts over, ``rest.1.wav``
+    must not come back with new audio (the browser would keep playing the old one).
+    """
+    rev = max(int(data.get("rest_rev") or 0), int((data.get("rest") or {}).get("rev") or 0)) + 1
+    data["rest_rev"] = rev
+    return rev
+
+
 def finish_track(sid: str, tid: str, target, without, rest, sample_rate: int, elapsed: float,
                  chain_from: Optional[dict] = None) -> bool:
     """
@@ -570,7 +586,7 @@ def finish_track(sid: str, tid: str, target, without, rest, sample_rate: int, el
                 state["gone"] = True
                 return
             prev = d.get("rest")
-            rev = (prev or {}).get("rev", 0) + 1
+            rev = next_rest_rev(d)
             _replace(build, folder / f"rest.{rev}.wav")
             _replace(build.with_suffix(".peaks.json"), folder / f"rest.{rev}.peaks.json")
             kept = [k for k in (prev or {}).get("tracks", []) if find_track(d, k) is not None]
@@ -608,7 +624,7 @@ def remove_done_track(sid: str, tid: str) -> None:
         if rest and others:
             new = dict(rest)
             if tid in rest.get("tracks", []) and track.get("file"):
-                rev = rest["rev"] + 1
+                rev = next_rest_rev(data)
                 out = folder / f"rest.{rev}.wav"
                 _combine(out, [(folder / rest["file"], 1.0), (folder / track["file"], 1.0)],
                          data["source"]["frames"], data["source"]["channels"])
@@ -618,6 +634,9 @@ def remove_done_track(sid: str, tid: str) -> None:
         def change(d):
             d["tracks"] = [t for t in d["tracks"] if t["id"] != tid]
             d["rest"] = new
+            # Keep counting even when "everything else" goes away (see next_rest_rev).
+            d["rest_rev"] = max(int(d.get("rest_rev") or 0), int(data.get("rest_rev") or 0),
+                                int((rest or {}).get("rev") or 0))
 
         update(sid, change)
         if rest and (new is None or new["file"] != rest["file"]):

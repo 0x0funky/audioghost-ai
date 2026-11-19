@@ -371,10 +371,12 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
     sound is saved right away (the UI can play it while the next one runs), with
     the model's own "without this sound" and a new "everything else": a chain, in
     which the model removes this sound from what was left after the earlier ones.
-    Everything played back is model output; nothing is subtracted.
+    Everything played back is model output; nothing is subtracted. With
+    ``options["cleanup"]`` ("Clean up leftovers"), the separated track then clears
+    its own traces from the "without" and from "everything else" (workers.cleanup).
     """
     import sessions
-    from workers import audio_io, sam_lite
+    from workers import audio_io, cleanup, sam_lite
 
     job_id = self.request.id
     queue_state.mark_started(job_id)
@@ -382,6 +384,7 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
     steps = sam_lite.QUALITY_STEPS[quality]
     chunk = max(5.0, min(60.0, float(options.get("chunk_duration") or 25.0)))
     seed = options.get("seed")
+    clean_up = bool(options.get("cleanup"))
 
     def job_cancelled() -> bool:
         return queue_state.is_cancelled(job_id)
@@ -456,15 +459,20 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
                               anchors=sam_lite.normalize_anchors(track.get("anchors")))
                 result = sam_lite.separate(lite, audio, track["prompt"],
                                            progress=stage(0.0, 0.5 if chain_from else 1.0), **common)
-                rest = result.residual
+                without = result.residual
+                if clean_up:
+                    without = cleanup.clean_residual(without, result.target, lite.sample_rate)
+                rest = without
                 if chain_from:
                     # The chain: the model removes this sound from what the earlier ones left.
                     previous = audio_io.load_audio(sessions.session_dir(session_id) / chain_from["file"],
                                                    lite.sample_rate, stereo=stereo)
                     rest = sam_lite.separate(lite, previous, track["prompt"], progress=stage(0.5, 1.0),
                                              decode_target=False, **common).residual
+                    if clean_up:
+                        rest = cleanup.clean_residual(rest, result.target, lite.sample_rate)
                 elapsed = time.perf_counter() - started
-                safely(sessions.finish_track, session_id, tid, result.target, result.residual, rest,
+                safely(sessions.finish_track, session_id, tid, result.target, without, rest,
                        lite.sample_rate, elapsed, chain_from)
             except sam_lite.SeparationCancelled:
                 safely(sessions.drop_track, session_id, tid)

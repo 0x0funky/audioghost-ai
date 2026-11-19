@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.3.1 - 2026-11
+
+### Fixed
+- **"Everything else" could play and draw an old result.** When every track was removed and a sound separated again,
+  the new "everything else" reused the file name of the first one (`rest.1.wav`). The app caches those files as
+  never-changing, so until it was restarted it kept the first result's waveform, and in some mixes its sound. The
+  revision now only goes up within a session.
+
+### New
+- **Clean up leftovers** (Advanced, off by default). SAM-Audio regenerates what it removes, so "everything else" can
+  keep traces of the separated sound. With this on, each separated track is used as a map of where its sound is, and
+  "everything else" is faded wherever that sound dominates. This takes a fraction of a second, with no extra model run.
+  On a real recording with a crying baby, it took the cry left in "everything else" from -22.6 dB to -28.8 dB
+  relative to the original, and left the parts without crying unchanged. Another sound that overlaps the separated
+  one, in the same moments and pitches, can come out a little thinner.
+
 ## v1.3.0 - 2026-11
 
 No Hugging Face account anymore, smaller downloads, and a Windows desktop app.

@@ -13,6 +13,8 @@ export interface SeparationSettings {
   stereo: boolean;
   use_float32: boolean;
   chunk_duration: number;
+  /** "Clean up leftovers": each separated sound clears its traces from everything else. */
+  cleanup: boolean;
 }
 
 export interface Track {

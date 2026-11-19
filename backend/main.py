@@ -12,7 +12,7 @@ from api import auth, models, separate, sessions, tasks
 from settings import (FRONTEND_ORIGIN_REGEX, FRONTEND_ORIGINS, INPROCESS, OUTPUT_DIR, RETENTION_HOURS,
                       STATIC_DIR)
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 
 @asynccontextmanager
