@@ -8,6 +8,8 @@ Describe the sounds you want (vocals, a dog barking, traffic) and AudioGhost put
 
 ![Version](https://img.shields.io/badge/version-1.3-green) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
+🌐 **Hear it first: [audioghost.suixu.ai](https://audioghost.suixu.ai)** plays three real recordings before and after separation, right in your browser. No NVIDIA graphics card? Join the waitlist there for **AudioGhost Cloud**, which will run in the browser.
+
 ## 🆕 What's new in v1.3
 
 | | |
