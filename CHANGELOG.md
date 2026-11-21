@@ -44,7 +44,7 @@ A timeline that works like an editor's, takes you can compare, projects that sta
 - Descriptions must be in English, the only language SAM-Audio's text encoder understands. Other scripts are refused
   with that explanation, in the app and in the API, instead of quietly giving a poor result.
 - With a single sound, *Everything else* is that take's own "without" file. A second copy of the same audio is no
-  longer written (a third less disk space for a project with one sound), and it follows the take you choose.
+  longer written (a quarter less disk space for a project with one sound), and it follows the take you choose.
 - Removing the second-to-last sound makes *Everything else* exact again (the remaining sound's own "without") instead
   of an approximation.
 - A menu per track (try again, download, seed, delete a take, remove the sound) replaces the row of chips in the panel.
