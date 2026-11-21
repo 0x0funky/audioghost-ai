@@ -179,7 +179,7 @@ export function AppHeader({
       {session && (
         <Button onClick={onHome}>
           <Clock size={16} aria-hidden="true" />
-          History
+          Projects
         </Button>
       )}
       <StatusChip system={system} auth={auth} />

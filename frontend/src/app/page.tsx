@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
+import { BatchView } from "@/components/BatchView";
 import { HfDialog } from "@/components/HfDialog";
 import { LicenseDialog } from "@/components/LicenseDialog";
 import { StartScreen } from "@/components/StartScreen";
@@ -19,6 +20,7 @@ function SessionView({
   onHome,
   onConnect,
   onLicense,
+  onOpenBatch,
 }: {
   id: string;
   system: SystemStatus | null;
@@ -26,6 +28,7 @@ function SessionView({
   onHome: () => void;
   onConnect: () => void;
   onLicense: () => void;
+  onOpenBatch: (id: string) => void;
 }) {
   const { session, error, refresh, setSession } = useSession(id);
   return (
@@ -40,10 +43,11 @@ function SessionView({
           auth={auth}
           onConnect={onConnect}
           onLicense={onLicense}
+          onOpenBatch={onOpenBatch}
         />
       ) : error?.status === 404 ? (
         <div className={workspaceStyles.state}>
-          <p>This session no longer exists. Sessions are deleted 24 hours after their last change.</p>
+          <p>This project no longer exists: it was deleted.</p>
           <Button variant="primary" onClick={onHome}>
             Start over
           </Button>
@@ -61,6 +65,7 @@ function App() {
   const params = useSearchParams();
   const router = useRouter();
   const sessionId = params.get("session");
+  const batchId = params.get("batch");
   const { status: system } = useSystem();
   const { auth, refresh: refreshAuth } = useAuth();
   const [hfOpen, setHfOpen] = useState(false);
@@ -68,6 +73,7 @@ function App() {
 
   const home = () => router.push("/");
   const open = (target: Session | string) => router.push(`/?session=${typeof target === "string" ? target : target.id}`);
+  const openBatch = (id: string) => router.push(`/?batch=${id}`);
 
   return (
     <>
@@ -80,7 +86,13 @@ function App() {
           onHome={home}
           onConnect={() => setHfOpen(true)}
           onLicense={() => setLicenseOpen(true)}
+          onOpenBatch={openBatch}
         />
+      ) : batchId ? (
+        <>
+          <AppHeader system={system} auth={auth} onHome={home} />
+          <BatchView key={batchId} id={batchId} onHome={home} onOpenSession={open} />
+        </>
       ) : (
         <>
           <AppHeader system={system} auth={auth} onHome={home} />
@@ -90,6 +102,7 @@ function App() {
             onConnect={() => setHfOpen(true)}
             onLicense={() => setLicenseOpen(true)}
             onOpen={open}
+            onOpenBatch={openBatch}
           />
         </>
       )}

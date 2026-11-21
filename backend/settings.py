@@ -25,9 +25,13 @@ INPROCESS = os.environ.get("AUDIOGHOST_INPROCESS", "") == "1"
 #: UI and the API share one origin.
 STATIC_DIR = os.environ.get("AUDIOGHOST_STATIC_DIR") or None
 
-#: Uploads and results older than this are deleted (0 = keep forever).
-#: Matches Celery's result_expires, after which the UI can't reach them anyway.
-RETENTION_HOURS = float(os.environ.get("AUDIOGHOST_RETENTION_HOURS", "24"))
+#: Sessions untouched for this long are deleted. 0 (the default) keeps them until
+#: the user deletes them.
+RETENTION_HOURS = float(os.environ.get("AUDIOGHOST_RETENTION_HOURS", "0"))
+
+#: Uploads and results of the v1.1 endpoints (/api/separate) are deleted after this
+#: long (0 = keep). Matches Celery's result_expires, after which they can't be reached.
+LEGACY_RETENTION_HOURS = float(os.environ.get("AUDIOGHOST_LEGACY_RETENTION_HOURS", "24"))
 
 #: Largest accepted upload in MB (0 = unlimited).
 MAX_UPLOAD_MB = float(os.environ.get("AUDIOGHOST_MAX_UPLOAD_MB", "2048"))

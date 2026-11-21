@@ -1,7 +1,17 @@
 "use client";
 
 import { Loader2, X } from "lucide-react";
-import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import styles from "./ui.module.css";
 
 type Variant = "default" | "primary" | "strong" | "ghost" | "dashed";
@@ -68,6 +78,7 @@ export interface SegmentOption<T extends string> {
   label: string;
   hint?: string;
   title?: string;
+  disabled?: boolean;
 }
 
 /** A row of buttons, one pressed. */
@@ -93,7 +104,7 @@ export function Segmented<T extends string>({
           className={styles.segment}
           aria-pressed={option.value === value}
           title={option.title}
-          disabled={disabled}
+          disabled={disabled || option.disabled}
           onClick={() => onChange(option.value)}
         >
           <span className={styles.segmentLabel}>{option.label}</span>
@@ -217,6 +228,219 @@ export function Dialog({
       )}
     </dialog>
   );
+}
+
+export interface MenuItem {
+  label: string;
+  hint?: string;
+  icon?: ReactNode;
+  onSelect: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}
+
+/**
+ * A button that opens a small menu. The menu is drawn on top of the whole page
+ * (a portal, positioned against the window), so neither the scrolling panes it
+ * opens from nor the sticky track heads can clip or cover it. ``null`` in
+ * ``items`` is a divider.
+ */
+export function Menu({
+  label,
+  items,
+  children,
+  className,
+  align = "end",
+  disabled,
+}: {
+  label: string;
+  items: (MenuItem | null)[];
+  children: ReactNode;
+  className?: string;
+  align?: "start" | "end";
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !button.current || !list.current) return;
+    const b = button.current.getBoundingClientRect();
+    const m = list.current.getBoundingClientRect();
+    const left = Math.max(8, Math.min(window.innerWidth - m.width - 8, align === "end" ? b.right - m.width : b.left));
+    const below = b.bottom + 4;
+    const top = below + m.height > window.innerHeight - 8 ? Math.max(8, b.top - m.height - 4) : below;
+    setPlace({ left, top });
+    list.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  }, [open, align]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!list.current?.contains(target) && !button.current?.contains(target)) close();
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        close();
+        button.current?.focus();
+      }
+    };
+    window.addEventListener("pointerdown", outside, true);
+    window.addEventListener("keydown", key, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("pointerdown", outside, true);
+      window.removeEventListener("keydown", key, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [open]);
+
+  const move = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const buttons = [...(list.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const next = (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[next]?.focus();
+  };
+
+  const menu = (
+    <div
+      ref={list}
+      role="menu"
+      aria-label={label}
+      className={styles.menu}
+      style={{ left: place?.left ?? 0, top: place?.top ?? 0, visibility: place ? "visible" : "hidden" }}
+      onKeyDown={move}
+    >
+      {items.map((item, index) =>
+        item === null ? (
+          <div key={`divider-${index}`} className={styles.menuDivider} role="separator" />
+        ) : (
+          <button
+            key={item.label}
+            type="button"
+            role="menuitem"
+            className={cx(styles.menuItem, item.danger && styles.menuDanger)}
+            disabled={item.disabled}
+            onClick={() => {
+              setOpen(false);
+              button.current?.focus();
+              item.onSelect();
+            }}
+          >
+            {item.icon && <span className={styles.menuIcon}>{item.icon}</span>}
+            <span className={styles.menuText}>
+              <span>{item.label}</span>
+              {item.hint && <span className={styles.menuHint}>{item.hint}</span>}
+            </span>
+          </button>
+        ),
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        className={className}
+        aria-label={label}
+        title={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => {
+          setPlace(null);
+          setOpen((value) => !value);
+        }}
+      >
+        {children}
+      </button>
+      {open && createPortal(menu, document.body)}
+    </>
+  );
+}
+
+/**
+ * A bar between two panes that is dragged to resize one of them. ``value`` is
+ * that pane's size in pixels. ``direction``: the way the size grows when the
+ * pointer moves right or down (-1 for a pane on the right or at the bottom).
+ */
+export function Splitter({
+  orientation,
+  label,
+  value,
+  min,
+  max,
+  direction = 1,
+  onChange,
+  onReset,
+}: {
+  /** "vertical": a vertical bar between a left and a right pane. */
+  orientation: "vertical" | "horizontal";
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  direction?: 1 | -1;
+  onChange: (value: number) => void;
+  onReset?: () => void;
+}) {
+  const drag = useRef<{ from: number; value: number } | null>(null);
+  const clamp = (next: number) => Math.round(Math.max(min, Math.min(max, next)));
+  const position = (event: ReactPointerEvent) => (orientation === "vertical" ? event.clientX : event.clientY);
+  return (
+    <div
+      role="separator"
+      tabIndex={0}
+      aria-label={label}
+      aria-orientation={orientation}
+      aria-valuenow={Math.round(value)}
+      aria-valuemin={min}
+      aria-valuemax={Math.round(max)}
+      title={`${label} (drag, or double-click to reset)`}
+      className={cx(styles.splitter, orientation === "vertical" ? styles.splitterVertical : styles.splitterHorizontal)}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = { from: position(event), value };
+      }}
+      onPointerMove={(event) => {
+        if (drag.current) onChange(clamp(drag.current.value + direction * (position(event) - drag.current.from)));
+      }}
+      onPointerUp={() => {
+        drag.current = null;
+      }}
+      onPointerCancel={() => {
+        drag.current = null;
+      }}
+      onDoubleClick={onReset}
+      onKeyDown={(event) => {
+        const grow = orientation === "vertical" ? "ArrowRight" : "ArrowDown";
+        const shrink = orientation === "vertical" ? "ArrowLeft" : "ArrowUp";
+        if (event.key === grow || event.key === shrink) {
+          event.preventDefault();
+          onChange(clamp(value + direction * (event.key === grow ? 24 : -24)));
+        } else if (event.key === "Enter" && onReset) {
+          event.preventDefault();
+          onReset();
+        }
+      }}
+    />
+  );
+}
+
+export function Kbd({ children }: { children: ReactNode }) {
+  return <kbd className={styles.kbd}>{children}</kbd>;
 }
 
 export { cx };

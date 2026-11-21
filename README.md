@@ -6,17 +6,31 @@
 
 Describe the sounds you want (vocals, a dog barking, traffic) and AudioGhost puts each one on its own track. Mix the tracks and export exactly what you hear, or your video with the new soundtrack. Powered by Meta's [SAM-Audio](https://github.com/facebookresearch/sam-audio), running locally on your own GPU, with no account to create.
 
-![Version](https://img.shields.io/badge/version-1.3-green) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
+![Version](https://img.shields.io/badge/version-1.4-green) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 🌐 **Hear it first: [audioghost.suixu.ai](https://audioghost.suixu.ai)** plays three real recordings before and after separation, right in your browser. No NVIDIA graphics card? Join the waitlist there for **AudioGhost Cloud**, which will run in the browser.
 
-## 🆕 What's new in v1.3
+## 🆕 What's new in v1.4
+
+| | |
+|---|---|
+| ✂️ **Select a part** | Drag on a track to select a part: play it, loop it, **change the mix there only** (remove the siren between 0:10 and 0:15 and nothing else), or **separate only that part**, which is quick on a long file and leaves the rest of the recording untouched |
+| 🎲 **Takes and seeds** | *Try again* keeps the result you had. Step through the takes of a sound and keep the best one; every take shows its seed, and a seed repeats a result |
+| 🗂️ **Projects stay** | Your files, tracks and takes stay until you delete them (they used to be deleted after 24 hours), with their size on the start screen |
+| 📚 **Batch** | Happy with one file? Run the same sounds and mix on many files and download every result, one by one or in one ZIP |
+| 🧭 **An editor's timeline** | Drag the ruler to move the playhead, resize the video and the panel, undo with Ctrl+Z, press ? for the shortcuts |
+| 🔁 **Everything else, again** | Rebuild *Everything else* in another order (the sound removed first comes out cleanest) and switch between the versions |
+
+<details>
+<summary>v1.3: no Hugging Face account, smaller downloads, a Windows desktop app</summary>
 
 | | |
 |---|---|
 | 🔓 **No Hugging Face account** | The models download from AudioGhost's own copies ([audioghostai](https://huggingface.co/audioghostai)) the first time you use them: no access request, no waiting for Meta's approval, no token ([how it works](#first-run-accept-the-model-license)) |
 | 📦 **Smaller downloads, same results** | Small 1.4 GB instead of 5.1 GB, Large 6.3 GB instead of 14.9 GB, and they load into the same weights as Meta's checkpoints, bit for bit |
 | 🖥️ **Windows desktop app (beta)** | One installer: no conda, Redis or git, and it keeps itself up to date ([download](#windows-desktop-app-beta)) |
+
+</details>
 
 <details>
 <summary>v1.2: several sounds per run, a mixer, export what you hear</summary>
@@ -27,7 +41,7 @@ Describe the sounds you want (vocals, a dog barking, traffic) and AudioGhost put
 | 🎚️ **A mixer** | Volume, mute and solo per track, plus *hold to hear the original*. Everything you hear is SAM-Audio's own output: mute one track and you get the model's own mix without that sound |
 | 💾 **Export what you hear** | One mixed file, single tracks as a ZIP, or your video with the new soundtrack: 24-bit WAV, FLAC or MP3, named like `song [no vocals].wav` |
 | 🕒 **Mark where a sound is, or isn't** | Drag on the timeline: *Sound is here* or *Not here*, per sound |
-| 🔄 **Nothing gets lost** | Sessions survive page reloads and restarts; recent work stays one click away for 24 hours |
+| 🔄 **Nothing gets lost** | Sessions survive page reloads and restarts; recent work stays one click away |
 | 🧭 **A new interface** | One workspace instead of a long form, system status in the top bar, dark and light themes, keyboard friendly ([screenshots](#-demo)) |
 | 🔗 **Everything else, made by the model** | Each new sound is removed from what the earlier ones left, so *Everything else* is real model output that still sounds like your recording (24 s stereo café recording: 9 s for the first sound, 14 s for each one after it; Large, Balanced, RTX 4090) |
 
@@ -41,12 +55,12 @@ https://github.com/user-attachments/assets/4dd5dc31-f28e-4f7f-924c-d3eeac3f7f7d
 
 A real field recording ("New Orleans ambience" by cognito perceptu, CC0). AudioGhost finds the band, plays just the band, then takes it out. Turn the sound on.
 
-![The AudioGhost workspace: the original, a speech track, a background-music track and everything else, with the separate panel on the right](docs/images/v1.2-workspace.png)
+![The AudioGhost workspace: the original, a jazz-music track with the music taken out of one part, a people-talking track with two takes, and everything else. A part of the timeline is selected, with the actions for it above the tracks, and the separate panel on the right](docs/images/v1.4-workspace.png)
 
 <details>
 <summary>Start screen</summary>
 
-![Start screen: drop zone, recent sessions, and a card showing the GPU, the model license and the downloaded models](docs/images/v1.3-start.png)
+![Start screen: drop zone, the projects with their sizes, a batch, and a card showing the GPU, the model license and the downloaded models](docs/images/v1.4-start.png)
 
 </details>
 
@@ -54,14 +68,17 @@ A real field recording ("New Orleans ambience" by cognito perceptu, CC0). AudioG
 
 - 🎯 **Text-guided separation** - describe any sound: "vocals", "drums", "a dog barking", "crowd noise"
 - 🎼 **Multi-track** - several sounds per run, each on its own track, plus everything else
-- 🎚️ **Mixer** - volume, mute, solo and *hold to hear the original*; all tracks play in sync
+- 🎚️ **Mixer** - *Remove* a sound, hear *Only* it, or set how much of it stays, for the whole file or for a selected part; *hold to hear the original*; all tracks play in sync
+- ✂️ **Parts** - select a part of the timeline to play or loop it, change the mix there only, or separate only that part
+- 🎲 **Takes** - try a sound again, keep every take and pick the best; seeds make a result repeatable
+- 📚 **Batch** - run one project's sounds and mix on many files
 - 🎬 **Video** - preview the video with your mix and export it with the new soundtrack
-- 🕒 **Temporal Lock** - mark where a sound is (or isn't) audible to point the model at the right source
+- 🕒 **Hints** - mark where a sound is (or isn't) audible to point the model at the right source
 - 🚀 **Consumer GPUs** - Small runs in ~4.2 GB of VRAM; long files are processed in crossfaded chunks
 - ⚡ **Speed / Quality presets** - Fast (8 steps), Balanced (16, Meta's default), High (32)
 - 🎧 **Stereo** - per-channel separation that keeps the stereo image (on by default for stereo files)
 - 💾 **Exports** - 24-bit WAV, FLAC, MP3 or a ZIP of single tracks, with readable names
-- 🔄 **Sessions** - your work survives reloads and restarts (kept for 24 hours)
+- 🔄 **Projects** - your work survives reloads and restarts, and stays until you delete it
 - 🔓 **No account** - the models download on first use, no Hugging Face login
 
 ## ⚡ Performance
@@ -152,15 +169,19 @@ The models come from [audioghostai](https://huggingface.co/audioghostai), AudioG
 
 ## Usage
 
-1. **Upload** an audio or video file (drag & drop or *Choose a file*). It shows up under **Recent**, and the page URL points to it, so a reload never loses your work.
-2. **Type the sounds you want**, one at a time (Enter), or pick a suggestion: "speech", "vocals", "background music", "a dog barking", "traffic"... Each becomes its own track.
+1. **Upload** an audio or video file (drag & drop or *Choose a file*). It becomes a project under **Projects**, and stays there until you delete it.
+2. **Type the sounds you want**, in English, one at a time (Enter), or pick a suggestion: "speech", "vocals", "background music", "a dog barking", "traffic"... Each becomes its own track.
 3. Optional:
-   - **Mark where a sound is**: select a new sound in the panel, then drag across the timeline with *Sound is here* or *Not here* (or use *Mark at playhead*). It's a hint; the whole file is still processed
+   - **Only a part**: drag on a track to select a part of the file, then choose *Selected part* in the panel. Good for trying a description on a long file first
+   - **Mark where a sound is**: click *Mark where it is* under the sound, then drag across the timeline with *It is here* or *Not here*. It's a hint for short, separate sounds; the whole file is still processed
    - **Model** and **Quality**: Small / Fast for drafts, Large / High for final exports
    - **Advanced**: stereo (on for stereo files; off is about twice as fast but mono), Meta's precision (`-tv`) checkpoints (need a Hugging Face account), full FP32, max chunk length
-4. Click **Separate**. Tracks appear as they finish, so you can listen to one while the next is running. Cancel a track with its ✕.
-5. **Mix**: S (solo), M (mute) and a volume slider per track, *Hold to hear the original* to compare, Space to play and pause. What you hear is always model output, picked by what you changed: everything at 0 dB plays the original; one track changed plays the model's own "without that sound" plus the track at your level; more changes play **Everything else** (the model removes each sound in turn from what the previous ones left) plus every track. Removing a finished track puts its sound back into Everything else.
+4. Click **Separate**. Tracks appear as they finish, so you can listen to one while the next is running. Cancel a track with its ✕. Not happy with one? Its ⟳ button makes another take and keeps the one you had.
+5. **Mix**: *Only*, *Remove* and a level slider per track, *Hold to hear the original* to compare, Space to play and pause. Select a part first and the change applies there only. What you hear is always model output, picked by what you changed: everything at 100% plays the original; one track changed plays the model's own "without that sound" plus the track at your level; more changes play **Everything else** (the model removes each sound in turn from what the previous ones left) plus every track. Removing a finished track puts its sound back into Everything else.
 6. **Export** what you hear as one file, single tracks as a ZIP, or (for videos) the video with your mix.
+7. More files like this one? **Batch...** runs the same sounds and mix on them.
+
+Press **?** in the workspace for the keyboard shortcuts.
 
 ### Command line
 
@@ -263,7 +284,7 @@ Navigate to `http://localhost:3000`, then [accept the model license](#first-run-
 | `AUDIOGHOST_PRELOAD_MODEL` | - | `small` / `base` / `large`: load a model when the worker starts |
 | `AUDIOGHOST_DEVICE` | auto | Force `cuda`, `cuda:1`, `cpu`, or `mps` (Apple GPU, experimental; runs in fp32 unless `AUDIOGHOST_PRECISION` is set) |
 | `AUDIOGHOST_SAFE_CODEC` | `0` | `1` = use SAM-Audio's original (slow, cuDNN-off) codec path |
-| `AUDIOGHOST_RETENTION_HOURS` | `24` | Delete uploads/results older than this (`0` = keep) |
+| `AUDIOGHOST_RETENTION_HOURS` | `0` | Delete projects untouched for this many hours (`0` = keep them until they are deleted by hand) |
 | `AUDIOGHOST_MAX_UPLOAD_MB` | `2048` | Upload size limit |
 | `AUDIOGHOST_REDIS_URL` | `redis://localhost:6379/0` | Celery broker / result backend |
 | `HF_HOME` | `~/.cache/huggingface` | Where downloaded models are stored |
@@ -275,18 +296,27 @@ Navigate to `http://localhost:3000`, then [accept the model license](#first-run-
 
 Interactive docs: `http://localhost:8000/docs`
 
-### Sessions (v1.2)
+### Sessions
 
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/api/sessions` | Upload a file (multipart `file`); returns the session |
-| `GET` | `/api/sessions` | Recent sessions |
+| `GET` | `/api/sessions` | Sessions, newest first, with their size on disk |
 | `GET` | `/api/sessions/{id}` | A session with its tracks, progress and file URLs |
 | `DELETE` | `/api/sessions/{id}` | Delete a session |
 | `POST` | `/api/sessions/{id}/separate` | Queue one or more prompts, one track each (JSON below) |
 | `DELETE` | `/api/sessions/{id}/tracks/{track}` | Cancel a running track, or remove a queued or finished one |
+| `POST` | `/api/sessions/{id}/tracks/{track}/activate` | Make a finished take the one that plays for its sound |
+| `POST` | `/api/sessions/{id}/rest/rebuild` | Run the chain of "everything else" again (`order`: sound ids, first removed first; `seed`; model settings) |
+| `DELETE` | `/api/sessions/{id}/rest/job` | Cancel that rebuild |
+| `POST` / `DELETE` | `/api/sessions/{id}/rest/{rev}[/activate]` | Go back to a kept version of "everything else", or delete one |
 | `GET` | `/api/sessions/{id}/files/{name}` | Audio, waveform overviews and the source video (Range requests) |
-| `POST` | `/api/sessions/{id}/export` | `kind`: `mix`, `tracks` (ZIP) or `video`; `format`: `wav`, `flac` or `mp3`; `gains`: linear gain per track id and `"rest"`; `tracks`: ids for `tracks` |
+| `POST` | `/api/sessions/{id}/export` | `kind`: `mix`, `tracks` (ZIP) or `video`; `format`: `wav`, `flac` or `mp3`; `gains`: linear gain per track id and `"rest"`; `segments`: parts of the file with other gains (`start`, `end`, `gains`); `tracks`: ids for `tracks` |
+| `POST` / `GET` | `/api/batches` | Create a batch from a recipe (`prompts` with a `gain` each, `rest_gain`, model settings, `kind`, `format`), or list them |
+| `GET` / `DELETE` | `/api/batches/{id}` | A batch with each file's progress; forget it (`?sessions=true` deletes its sessions too) |
+| `POST` | `/api/batches/{id}/items` | Add a file (multipart `file`): it becomes a session and is queued |
+| `GET` | `/api/batches/{id}/items/{session}/export` | One file's result |
+| `POST` | `/api/batches/{id}/export` | Every finished result in one ZIP |
 | `GET` | `/api/system/status` | Redis and worker status, GPU, loaded model |
 | `GET` | `/api/auth/status` | Models on this computer, license accepted, Hugging Face connection |
 | `GET` | `/api/models/license` | Meta's SAM License text, and whether it was accepted |
@@ -299,11 +329,12 @@ Interactive docs: `http://localhost:8000/docs`
     { "text": "background music", "anchors": [["+", 12.0, 18.5], ["-", 40.0, 44.0]] }
   ],
   "model_size": "base", "quality": "balanced", "variant": "default",
-  "stereo": true, "use_float32": false, "chunk_duration": 25
+  "stereo": true, "use_float32": false, "chunk_duration": 25,
+  "seed": 1234, "range": [60.0, 90.0]
 }
 ```
 
-Anchors are optional: `"+"` = the sound is audible here, `"-"` = it isn't (start and end in seconds). While the model still has to be downloaded, `separate` answers 409 until the license is accepted, and 401 for `-tv` without a Hugging Face token.
+Anchors are optional: `"+"` = the sound is audible here, `"-"` = it isn't (start and end in seconds). `seed` (random when left out; each track reports the one it used) repeats a result. `range` separates only that part of the file. A prompt with `"retake_of": "<track id>"` makes another take of that track's sound instead of a new sound. Descriptions must be in English. While the model still has to be downloaded, `separate` answers 409 until the license is accepted, and 401 for `-tv` without a Hugging Face token.
 
 <details>
 <summary>Single-task API (v1.1, still supported)</summary>
@@ -399,14 +430,16 @@ audioghost-ai/
 ├── backend/
 │   ├── main.py               # FastAPI app
 │   ├── settings.py           # paths & env configuration
-│   ├── sessions.py           # sessions: storage, "everything else", mixing, exports
+│   ├── sessions.py           # sessions: storage, takes, "everything else", mixing, exports
+│   ├── batches.py            # batches: one recipe for many files
 │   ├── model_license.py      # Meta's SAM License (licenses/SAM_LICENSE.txt) and its acceptance
 │   ├── constraints.txt       # tested versions of torch / torchcodec / xformers / transformers
 │   ├── requirements-lean.txt # SAM-Audio deps for Apple Silicon (no decord / xformers)
 │   ├── api/
 │   │   ├── auth.py           # models on this computer; Hugging Face login (only for -tv)
 │   │   ├── models.py         # model license API
-│   │   ├── sessions.py       # v1.2 sessions API
+│   │   ├── sessions.py       # sessions API
+│   │   ├── batches.py        # batches API
 │   │   ├── separate.py       # v1.1 single-task API (validation, streaming upload)
 │   │   └── tasks.py          # v1.1 status, cancel, downloads, ZIP, video remux
 │   ├── workers/

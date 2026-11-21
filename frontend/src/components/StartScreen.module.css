@@ -329,3 +329,9 @@
     font-size: 30px;
   }
 }
+
+/* Projects are kept until deleted: a long list scrolls inside its box. */
+.scrollList {
+  max-height: 440px;
+  overflow-y: auto;
+}
