@@ -1,7 +1,8 @@
+/* One scroll container for both directions: the ruler sticks to its top, the heads to its left. */
 .scroller {
   position: relative;
-  overflow-x: auto;
-  overflow-y: hidden;
+  height: 100%;
+  overflow: auto;
 }
 
 .canvas {
@@ -20,15 +21,24 @@
 .head {
   position: sticky;
   left: 0;
-  z-index: 3;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  padding: 10px 12px 10px 16px;
+  padding: 8px 12px 8px 16px;
   background: var(--surface-2);
   border-right: 1px solid var(--border);
+}
+
+/* The selected track: keyboard shortcuts (S, M) and "only here" act on it. */
+.head[data-focused]::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--accent-strong);
 }
 
 .headTop {
@@ -36,6 +46,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
+  min-height: 28px;
 }
 
 .swatch {
@@ -61,6 +72,71 @@
   white-space: nowrap;
   font-size: 12px;
   color: var(--text-3);
+}
+
+/* Second line of a head: takes, what the take is, and "try again". */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 26px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.statusText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bad {
+  color: var(--danger);
+}
+
+.attention {
+  color: var(--warning);
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  color: var(--text-2);
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+.step:hover:not(:disabled) {
+  background: var(--surface-4);
+  color: var(--text-1);
+}
+
+.step:disabled {
+  opacity: 0.35;
+}
+
+.stepLabel {
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .error {
@@ -98,18 +174,19 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 32px;
-  height: 32px;
+  height: 28px;
+  padding: 0 8px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-m);
   background: transparent;
   color: var(--text-2);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .toggle:hover {
   background: var(--surface-3);
+  color: var(--text-1);
 }
 
 .toggle[aria-pressed="true"].solo {
@@ -124,19 +201,46 @@
   color: var(--text-inverse);
 }
 
+/* Narrow heads show the short labels. */
+.short {
+  display: none;
+}
+
+.canvas[data-compact] .long {
+  display: none;
+}
+
+.canvas[data-compact] .short {
+  display: inline;
+}
+
+.canvas[data-compact] .toggle {
+  width: 28px;
+  padding: 0;
+}
+
+.canvas[data-compact] .db {
+  width: 52px;
+}
+
 .holdButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 32px;
+  height: 30px;
   padding: 0 12px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-m);
   background: transparent;
   color: var(--text-1);
   font-size: 13px;
+  white-space: nowrap;
   touch-action: none;
+}
+
+.holdButton:hover {
+  background: var(--surface-3);
 }
 
 .holdButton[aria-pressed="true"] {
@@ -168,7 +272,11 @@
   position: relative;
   overflow: hidden;
   background: var(--lane);
-  cursor: text;
+  cursor: default;
+}
+
+.canvas[data-marking] .lane {
+  cursor: crosshair;
 }
 
 .laneDim {
@@ -205,7 +313,81 @@
   pointer-events: none;
 }
 
+/* A take that covers a part of the file: the rest of its lane is not separated. */
+.outside {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(135deg, transparent 0 7px, var(--border) 7px 8px);
+  pointer-events: none;
+}
+
+/* "Only here": the part of a lane where its mix change applies. */
+.only {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 2px;
+  padding: 4px;
+  overflow: hidden;
+  border-left: 1px solid var(--text-3);
+  border-right: 1px solid var(--text-3);
+  background: color-mix(in srgb, var(--lane) 68%, transparent);
+  pointer-events: none;
+}
+
+.only[data-kind="solo"] {
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
+.only[data-kind="level"] {
+  background: color-mix(in srgb, var(--lane) 40%, transparent);
+}
+
+.onlyLabel {
+  padding: 2px 6px;
+  overflow: hidden;
+  border-radius: var(--radius-s);
+  background: var(--surface-4);
+  color: var(--text-1);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onlyRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: var(--surface-4);
+  color: var(--text-2);
+  pointer-events: auto;
+}
+
+.onlyRemove:hover {
+  background: var(--border-strong);
+  color: var(--text-1);
+}
+
+.rulerRow {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+}
+
 .rulerHead {
+  z-index: 3;
   display: flex;
   align-items: center;
   padding: 0 16px;
@@ -218,33 +400,33 @@
 
 .ruler {
   position: relative;
-  height: 36px;
+  height: 40px;
   overflow: hidden;
   background: var(--surface-1);
-  cursor: text;
+  cursor: ew-resize;
 }
 
 .tick {
   position: absolute;
   top: 0;
   bottom: 0;
-  padding: 10px 0 0 6px;
+  padding: 3px 0 0 6px;
   border-left: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-3);
   pointer-events: none;
 }
 
 .regionChip {
   position: absolute;
-  top: 6px;
+  bottom: 2px;
   z-index: 1;
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 24px;
+  height: 20px;
   min-width: 24px;
-  padding: 0 2px 0 6px;
+  padding: 0 0 0 6px;
   overflow: hidden;
   border-radius: var(--radius-s);
   font-size: 11px;
@@ -252,6 +434,10 @@
   white-space: nowrap;
   color: var(--text-1);
   cursor: default;
+}
+
+.regionChip[data-dim] {
+  opacity: 0.5;
 }
 
 .chipIn {
@@ -275,8 +461,9 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
   border: 0;
   border-radius: 4px;
   background: transparent;
@@ -287,14 +474,20 @@
   background: rgba(0, 0, 0, 0.25);
 }
 
+/* Hints: where a sound that is not sent yet can, or can't, be heard. */
 .region {
   position: absolute;
-  top: 0;
+  top: 40px;
   bottom: 0;
+  z-index: 1;
   background: var(--region-in);
   border-left: 1px solid var(--region-in-edge);
   border-right: 1px solid var(--region-in-edge);
   pointer-events: none;
+}
+
+.region[data-dim] {
+  opacity: 0.45;
 }
 
 .regionOut {
@@ -306,21 +499,112 @@
   border-style: dashed;
 }
 
-.playhead {
+.selection {
   position: absolute;
-  top: 0;
+  top: 40px;
+  bottom: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--text-1) 9%, transparent);
+  border-left: 1px solid var(--text-2);
+  border-right: 1px solid var(--text-2);
+  pointer-events: none;
+}
+
+/* The selection's bar in the ruler, with an edge to drag on each side. */
+.selectionBar {
+  position: absolute;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 20px;
+  min-width: 2px;
+  background: var(--text-2);
+  color: var(--text-inverse);
+  pointer-events: none;
+}
+
+.selectionEdge {
+  flex: none;
+  width: 10px;
+  height: 100%;
+  margin: 0 -5px;
+  cursor: col-resize;
+  pointer-events: auto;
+}
+
+.selectionLabel {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hoverLine {
+  position: absolute;
+  top: 40px;
   bottom: 0;
   left: 0;
+  z-index: 3;
+  width: 1px;
+  background: color-mix(in srgb, var(--playhead) 35%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hoverLabel {
+  position: absolute;
+  top: 2px;
+  left: 4px;
   z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-4);
+  color: var(--text-1);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.playhead {
+  position: absolute;
+  top: 40px;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
   width: 2px;
   margin-left: -1px;
   background: var(--playhead);
   pointer-events: none;
 }
 
+/* In the ruler: a marker on top and the playhead's line through the ruler below it. */
+.playheadGrip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  z-index: 3;
+  width: 12px;
+  background: linear-gradient(var(--playhead), var(--playhead)) center / 2px 100% no-repeat;
+  pointer-events: none;
+}
+
+.playheadGrip::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 11px;
+  background: var(--playhead);
+  clip-path: polygon(0 0, 100% 0, 100% 45%, 50% 100%, 0 45%);
+}
+
 .addRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   padding: 10px 16px;
   background: var(--surface-2);
 }

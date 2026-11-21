@@ -314,3 +314,142 @@
   text-transform: uppercase;
   color: var(--text-3);
 }
+
+.menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--surface-3);
+  box-shadow: var(--shadow-dialog);
+}
+
+.menuItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text-1);
+  font-size: 13px;
+  text-align: left;
+}
+
+.menuItem:hover:not(:disabled),
+.menuItem:focus-visible {
+  background: var(--surface-4);
+}
+
+.menuItem:disabled {
+  opacity: 0.45;
+}
+
+.menuDanger {
+  color: var(--danger);
+}
+
+.menuIcon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+  color: var(--text-3);
+}
+
+.menuDanger .menuIcon {
+  color: inherit;
+}
+
+.menuText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.menuHint {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.menuDivider {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border-strong);
+}
+
+/* A thin line that is easy to grab: the hit area is wider than what is drawn. */
+.splitter {
+  position: relative;
+  z-index: 4;
+  flex: none;
+  background: var(--border);
+  touch-action: none;
+  transition: background 0.12s;
+}
+
+.splitter::before {
+  content: "";
+  position: absolute;
+}
+
+.splitter:hover,
+.splitter:active,
+.splitter:focus-visible {
+  background: var(--accent-strong);
+  box-shadow: none;
+}
+
+.splitterVertical {
+  width: 1px;
+  cursor: col-resize;
+}
+
+.splitterVertical::before {
+  inset: 0 -5px;
+}
+
+.splitterVertical:hover,
+.splitterVertical:active,
+.splitterVertical:focus-visible {
+  box-shadow: -1px 0 0 var(--accent-strong), 1px 0 0 var(--accent-strong);
+}
+
+.splitterHorizontal {
+  height: 1px;
+  cursor: row-resize;
+}
+
+.splitterHorizontal::before {
+  inset: -5px 0;
+}
+
+.splitterHorizontal:hover,
+.splitterHorizontal:active,
+.splitterHorizontal:focus-visible {
+  box-shadow: 0 -1px 0 var(--accent-strong), 0 1px 0 var(--accent-strong);
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}

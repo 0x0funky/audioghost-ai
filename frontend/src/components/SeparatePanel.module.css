@@ -4,7 +4,6 @@
   min-width: 0;
   min-height: 100%;
   background: var(--surface-1);
-  border-left: 1px solid var(--border);
 }
 
 .head {
@@ -346,4 +345,179 @@ fieldset.fieldset {
 .run {
   flex: none;
   color: var(--accent-text);
+}
+
+/* v1.4: the sound input with its Add button, sounds not sent yet as rows with their hints, the seed. */
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 5px 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--surface-3);
+}
+
+.inputRow:focus-within {
+  border-color: var(--accent-strong);
+}
+
+.inputRow[data-invalid] {
+  border-color: var(--danger);
+}
+
+.inputError {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+
+.inputError svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.pendingList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pendingItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 8px 12px;
+  border: 1px dashed var(--accent-strong);
+  border-radius: var(--radius-l);
+  background: var(--accent-softer);
+}
+
+.pendingItem[data-marking] {
+  border-style: solid;
+  background: var(--accent-soft);
+}
+
+.pendingTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pendingName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.pendingActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+}
+
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.linkButton:hover {
+  text-decoration: underline;
+}
+
+.linkButton[aria-pressed="true"] {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.hintChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.hintChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 2px 0 8px;
+  border: 1px solid var(--accent-strong);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text-1);
+  font-size: 11px;
+}
+
+.hintChip[data-kind="-"] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.hintRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+.hintRemove:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.hint strong {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+fieldset.fieldset .hint {
+  margin-top: 8px;
+}
+
+.seedRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.seedRow .seedInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+
+.seedRow .seedInput:focus-visible {
+  border-color: var(--accent-strong);
+  box-shadow: none;
 }

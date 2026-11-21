@@ -8,11 +8,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from api import auth, models, separate, sessions, tasks
-from settings import (FRONTEND_ORIGIN_REGEX, FRONTEND_ORIGINS, INPROCESS, OUTPUT_DIR, RETENTION_HOURS,
-                      STATIC_DIR)
+from api import auth, batches, models, separate, sessions, tasks
+from settings import (FRONTEND_ORIGIN_REGEX, FRONTEND_ORIGINS, INPROCESS, LEGACY_RETENTION_HOURS, OUTPUT_DIR,
+                      RETENTION_HOURS, STATIC_DIR)
 
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 
 
 @asynccontextmanager
@@ -20,11 +20,10 @@ async def lifespan(_app: FastAPI):
     import sessions as session_store
     from workers.tasks import cleanup_old_files
 
-    removed = await run_in_threadpool(cleanup_old_files, RETENTION_HOURS)
+    removed = await run_in_threadpool(cleanup_old_files, LEGACY_RETENTION_HOURS)
     removed_sessions = await run_in_threadpool(session_store.cleanup, RETENTION_HOURS)
     if removed or removed_sessions:
-        print(f"[AudioGhost] Removed {removed} files and {removed_sessions} sessions "
-              f"older than {RETENTION_HOURS:g}h")
+        print(f"[AudioGhost] Removed {removed} old files and {removed_sessions} sessions")
     if INPROCESS:
         # Desktop app: this process is also the worker. Same start-up as a Celery
         # worker: fail interrupted tracks, start the heartbeat, warm up.
@@ -63,6 +62,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(separate.router, prefix="/api/separate", tags=["Separation"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(sessions.router, prefix="/api/sessions", tags=["Sessions"])
+app.include_router(batches.router, prefix="/api/batches", tags=["Batches"])
 app.include_router(models.router, prefix="/api/models", tags=["Models"])
 
 
