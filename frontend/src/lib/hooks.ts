@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "./api";
-import type { AuthStatus, Peaks, Session, SessionSummary, SystemStatus } from "./types";
+import type { AuthStatus, Batch, Peaks, Session, SessionList, SystemStatus } from "./types";
 
 /** Backend / Redis / worker status, re-checked often while something is wrong. */
 export function useSystem() {
@@ -47,12 +47,11 @@ export function useAuth() {
 }
 
 export function useRecentSessions() {
-  const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
+  const [list, setList] = useState<SessionList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     try {
-      const data = await api.sessions();
-      setSessions(data.sessions);
+      setList(await api.sessions());
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -62,7 +61,58 @@ export function useRecentSessions() {
     const first = setTimeout(refresh, 0);
     return () => clearTimeout(first);
   }, [refresh]);
-  return { sessions, error, refresh, setSessions };
+  return { sessions: list?.sessions ?? null, list, error, refresh };
+}
+
+export function useBatches() {
+  const [batches, setBatches] = useState<Batch[] | null>(null);
+  const refresh = useCallback(async () => {
+    try {
+      setBatches((await api.batches()).batches);
+    } catch {
+      setBatches(null);
+    }
+  }, []);
+  useEffect(() => {
+    const first = setTimeout(refresh, 0);
+    return () => clearTimeout(first);
+  }, [refresh]);
+  return { batches, refresh };
+}
+
+/** A batch, polled while files of it are still queued or running. */
+export function useBatch(id: string) {
+  const [batch, setBatch] = useState<Batch | null>(null);
+  const [error, setError] = useState<{ message: string; status: number } | null>(null);
+  const [nonce, setNonce] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const next = await api.batch(id);
+        if (cancelled) return;
+        setBatch(next);
+        setError(null);
+        const busy = (next.items ?? []).some((item) => item.status === "queued" || item.status === "running");
+        timer = setTimeout(poll, busy ? 1500 : 15_000);
+      } catch (err) {
+        if (cancelled) return;
+        const status = err instanceof ApiError ? err.status : 0;
+        setError({ message: err instanceof Error ? err.message : String(err), status });
+        if (status !== 404) timer = setTimeout(poll, 3000);
+      }
+    };
+    timer = setTimeout(poll, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [id, nonce]);
+
+  const refresh = useCallback(() => setNonce((n) => n + 1), []);
+  return { batch, error, refresh, setBatch };
 }
 
 const ACTIVE = new Set(["queued", "running"]);
@@ -82,7 +132,7 @@ export function useSession(id: string) {
         if (cancelled) return;
         setSessionState(next);
         setError(null);
-        const busy = next.tracks.some((t) => ACTIVE.has(t.status));
+        const busy = next.tracks.some((t) => ACTIVE.has(t.status)) || ACTIVE.has(next.rest_job?.status ?? "");
         timer = setTimeout(poll, busy ? 1000 : 10_000);
       } catch (err) {
         if (cancelled) return;

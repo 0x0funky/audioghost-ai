@@ -3,14 +3,22 @@
  *
  * Each source is a streaming <audio> element routed through a WebAudio
  * GainNode, so a mix is just a set of gains (muting, solo and "hold to hear
- * the original" switch instantly, and gains above 1 boost). The original's
- * element is the clock: the others (and a muted <video>) are nudged back when
- * they drift more than a few frames.
+ * the original" switch instantly, and gains above 1 boost). The mix can change
+ * over time ("only here" changes): the player follows a list of stretches with
+ * their own gains. The original's element is the clock: the others (and a
+ * muted <video>) are nudged back when they drift more than a few frames.
  */
 
 export interface PlayerSnapshot {
   playing: boolean;
   time: number;
+}
+
+/** Source gains (keyed by "original", "rest", a sound id or "without:<id>") for a stretch of time. */
+export interface PlayerSegment {
+  start: number;
+  end: number;
+  gains: Record<string, number>;
 }
 
 interface Channel {
@@ -35,6 +43,10 @@ export class MultiTrackPlayer {
   private raf = 0;
   private lastEmit = 0;
   private loop = false;
+  /** The part playback stays in (a selection); null: the whole file. */
+  private bounds: [number, number] | null = null;
+  private mix: PlayerSegment[] = [];
+  private mixIndex = -1;
   /** Last gains set, so a source added later (a new "everything else") starts at its level. */
   private gains: Record<string, number> = {};
 
@@ -68,7 +80,7 @@ export class MultiTrackPlayer {
     return clock && clock.readyState > 0 ? clock.currentTime : this.snapshot.time;
   }
 
-  /** Make the player play exactly these sources (keyed by "original", "rest" or a track id). */
+  /** Make the player play exactly these sources (keyed by "original", "rest", a sound id...). */
   setSources(sources: { key: string; url: string }[]) {
     const wanted = new Map(sources.map((s) => [s.key, s.url]));
     for (const [key, channel] of [...this.channels]) {
@@ -122,7 +134,7 @@ export class MultiTrackPlayer {
   }
 
   /** Linear gain per source key; sources not listed are silent. */
-  setGains(gains: Record<string, number>) {
+  private applyGains(gains: Record<string, number>) {
     this.gains = { ...gains };
     for (const channel of this.channels.values()) {
       channel.target = Math.max(0, gains[channel.key] ?? 0);
@@ -131,6 +143,28 @@ export class MultiTrackPlayer {
       } else {
         channel.el.volume = Math.min(1, channel.target);
       }
+    }
+  }
+
+  /** The same gains for the whole file. */
+  setGains(gains: Record<string, number>) {
+    this.setMix([{ start: 0, end: Infinity, gains }]);
+  }
+
+  /** Gains that change over time: back-to-back stretches (see `mixSegments`). */
+  setMix(segments: PlayerSegment[]) {
+    this.mix = segments;
+    this.mixIndex = -1;
+    this.followMix(this.currentTime());
+  }
+
+  private followMix(t: number) {
+    if (!this.mix.length) return;
+    let index = this.mix.findIndex((segment) => t >= segment.start && t < segment.end);
+    if (index < 0) index = t < this.mix[0].start ? 0 : this.mix.length - 1;
+    if (index !== this.mixIndex) {
+      this.mixIndex = index;
+      this.applyGains(this.mix[index].gains);
     }
   }
 
@@ -154,11 +188,9 @@ export class MultiTrackPlayer {
     }
     if (this.ctx.state === "suspended") await this.ctx.resume();
     let start = this.currentTime();
-    if (start >= this.duration - 0.05) start = 0;
-    for (const channel of this.channels.values()) {
-      if (channel.el.readyState > 0) channel.el.currentTime = start;
-    }
-    if (this.video && this.video.readyState > 0) this.video.currentTime = start;
+    if (this.bounds && (start < this.bounds[0] - 0.01 || start >= this.bounds[1] - 0.05)) start = this.bounds[0];
+    else if (start >= this.duration - 0.05) start = 0;
+    this.moveTo(start);
     this.emit({ playing: true, time: start });
     await Promise.all([...this.channels.values()].map((c) => c.el.play().catch(() => undefined)));
     if (this.video) void this.video.play().catch(() => undefined);
@@ -178,12 +210,17 @@ export class MultiTrackPlayer {
     else void this.play();
   }
 
-  seek(time: number) {
-    const t = Math.max(0, Math.min(this.duration, time));
+  private moveTo(t: number) {
     for (const channel of this.channels.values()) {
       if (channel.el.readyState > 0) channel.el.currentTime = t;
     }
     if (this.video && this.video.readyState > 0) this.video.currentTime = t;
+    this.followMix(t);
+  }
+
+  seek(time: number) {
+    const t = Math.max(0, Math.min(this.duration, time));
+    this.moveTo(t);
     this.emit({ time: t });
   }
 
@@ -191,11 +228,20 @@ export class MultiTrackPlayer {
     this.loop = loop;
   }
 
+  /** Keep playback inside a part of the file (a selection): it starts there and stops, or loops, at its end. */
+  setBounds(bounds: [number, number] | null) {
+    this.bounds = bounds && bounds[1] - bounds[0] > 0.05 ? [Math.max(0, bounds[0]), Math.min(this.duration, bounds[1])] : null;
+  }
+
+  private restart(at: number) {
+    this.seek(at);
+    for (const channel of this.channels.values()) void channel.el.play().catch(() => undefined);
+    if (this.video) void this.video.play().catch(() => undefined);
+  }
+
   private onEnded = () => {
     if (this.loop) {
-      this.seek(0);
-      for (const channel of this.channels.values()) void channel.el.play().catch(() => undefined);
-      if (this.video) void this.video.play().catch(() => undefined);
+      this.restart(this.bounds ? this.bounds[0] : 0);
       return;
     }
     this.pause();
@@ -205,7 +251,17 @@ export class MultiTrackPlayer {
   private tick = () => {
     const clock = this.clock();
     if (!clock || !this.snapshot.playing) return;
-    const t = clock.currentTime;
+    let t = clock.currentTime;
+    if (this.bounds && t >= this.bounds[1]) {
+      if (this.loop) {
+        this.restart(this.bounds[0]);
+        t = this.bounds[0];
+      } else {
+        this.pause();
+        this.seek(this.bounds[1]);
+        return;
+      }
+    }
     for (const channel of this.channels.values()) {
       const el = channel.el;
       if (el !== clock && el.readyState > 0 && Math.abs(el.currentTime - t) > AUDIO_DRIFT) {
@@ -216,6 +272,7 @@ export class MultiTrackPlayer {
     if (this.video && this.video.readyState > 0 && Math.abs(this.video.currentTime - t) > VIDEO_DRIFT) {
       this.video.currentTime = t;
     }
+    this.followMix(t);
     const now = performance.now();
     if (now - this.lastEmit > 33) {
       this.lastEmit = now;

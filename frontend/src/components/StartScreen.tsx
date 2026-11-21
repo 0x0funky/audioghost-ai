@@ -1,11 +1,11 @@
 "use client";
 
-import { AlertTriangle, Check, FileAudio, Film, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Check, FileAudio, Film, Layers, Trash2, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { uploadSession } from "@/lib/api";
 import { api } from "@/lib/api";
-import { expiresIn, formatTime, relativeDay } from "@/lib/format";
-import { useRecentSessions } from "@/lib/hooks";
+import { expiresIn, formatBytes, formatTime, relativeDay } from "@/lib/format";
+import { useBatches, useRecentSessions } from "@/lib/hooks";
 import type { AuthStatus, Session, SystemStatus } from "@/lib/types";
 import styles from "./StartScreen.module.css";
 import { Button, ErrorText, IconButton, ProgressBar, SectionLabel } from "./ui";
@@ -135,14 +135,17 @@ export function StartScreen({
   onConnect,
   onLicense,
   onOpen,
+  onOpenBatch,
 }: {
   system: SystemStatus | null;
   auth: AuthStatus | null;
   onConnect: () => void;
   onLicense: () => void;
   onOpen: (session: Session | string) => void;
+  onOpenBatch: (id: string) => void;
 }) {
-  const { sessions, error: listError, refresh } = useRecentSessions();
+  const { sessions, list, error: listError, refresh } = useRecentSessions();
+  const { batches } = useBatches();
   const [dragging, setDragging] = useState(false);
   const [upload, setUpload] = useState<{ name: string; progress: number; abort: () => void } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -249,16 +252,27 @@ export function StartScreen({
         <section className={styles.section} aria-labelledby="recent-heading">
           <div className={styles.sectionHead}>
             <h2 id="recent-heading" className={styles.h2}>
-              Recent
+              Projects
             </h2>
-            <span className={styles.small}>Kept for 24 hours after the last change</span>
+            <span className={styles.small}>
+              {!list
+                ? ""
+                : list.retention_hours > 0
+                  ? `Deleted ${list.retention_hours} hours after the last change`
+                  : list.sessions.length
+                    ? `Kept until you delete them · ${formatBytes(list.total_bytes)} on this computer`
+                    : "Kept until you delete them"}
+            </span>
           </div>
           {listError && !sessions ? (
-            <div className={styles.empty}>Recent sessions appear here once the backend is running.</div>
+            <div className={styles.empty}>Your projects appear here once the backend is running.</div>
           ) : sessions && sessions.length === 0 ? (
-            <div className={styles.empty}>Nothing yet. Your sessions show up here, so a page reload never loses work.</div>
+            <div className={styles.empty}>
+              Nothing yet. Every file you open becomes a project here, with its tracks and takes, and stays until you
+              delete it.
+            </div>
           ) : (
-            <ul className={styles.list}>
+            <ul className={`${styles.list} ${styles.scrollList}`}>
               {(sessions ?? []).map((item) => {
                 const done = item.tracks.filter((t) => t.status === "done").map((t) => t.prompt);
                 const expiry = expiresIn(item.expires_at);
@@ -276,7 +290,9 @@ export function StartScreen({
                       {done.length ? done.join(", ") : "no tracks yet"} · {formatTime(item.duration)}
                     </span>
                     <span className={styles.rowActions}>
-                      <span className={styles.rowMeta}>{expiry ?? relativeDay(item.updated_at)}</span>
+                      <span className={`${styles.rowMeta} tabular`}>
+                        {expiry ?? relativeDay(item.updated_at)} · {formatBytes(item.size_bytes)}
+                      </span>
                       <Button size="small" onClick={() => onOpen(item.id)} aria-label={`Open ${item.filename}`}>
                         Open
                       </Button>
@@ -296,18 +312,52 @@ export function StartScreen({
             </ul>
           )}
         </section>
+
+        {batches && batches.length > 0 && (
+          <section className={styles.section} aria-labelledby="batches-heading">
+            <div className={styles.sectionHead}>
+              <h2 id="batches-heading" className={styles.h2}>
+                Batches
+              </h2>
+              <span className={styles.small}>One recipe for many files. Start one from a project: Batch...</span>
+            </div>
+            <ul className={`${styles.list} ${styles.scrollList}`}>
+              {batches.map((batch) => {
+                const finished = batch.counts.done ?? 0;
+                const failed = (batch.counts.failed ?? 0) + (batch.counts.missing ?? 0);
+                return (
+                  <li key={batch.id} className={styles.row}>
+                    <Layers size={18} className={styles.rowIcon} aria-hidden="true" />
+                    <span className={styles.rowName} title={batch.name}>
+                      {batch.name || batch.recipe.prompts.map((p) => p.text).join(", ")}
+                    </span>
+                    <span className={styles.rowMeta}>
+                      {finished} of {batch.files} done{failed ? ` · ${failed} failed` : ""}
+                    </span>
+                    <span className={styles.rowActions}>
+                      <span className={styles.rowMeta}>{relativeDay(batch.created_at)}</span>
+                      <Button size="small" onClick={() => onOpenBatch(batch.id)} aria-label={`Open batch ${batch.name}`}>
+                        Open
+                      </Button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
       </main>
 
       <aside className={styles.side}>
         <Setup system={system} auth={auth} onConnect={onConnect} onLicense={onLicense} />
         <section className={styles.card} aria-labelledby="new-heading">
           <h2 id="new-heading" className={styles.h2}>
-            New in v1.3
+            New in v1.4
           </h2>
           <ul className={styles.bullets}>
-            <li>No Hugging Face account: the models download on first use</li>
-            <li>Less than half the download size, with the same results</li>
-            <li>A Windows desktop app (beta) that keeps itself up to date</li>
+            <li>Drag on a track to select a part: play it, loop it, or change the mix there only</li>
+            <li>Try a sound again and keep every take to compare; seeds repeat a result</li>
+            <li>Projects stay until you delete them, and a batch runs one recipe on many files</li>
           </ul>
         </section>
       </aside>

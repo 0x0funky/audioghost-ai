@@ -33,6 +33,26 @@ export const DEFAULT_SETTINGS: SeparationSettings = {
   use_float32: false,
   chunk_duration: 25,
   cleanup: false,
+  seed: null,
+};
+
+/** Pane sizes of the workspace, in pixels. */
+export interface LayoutPrefs {
+  /** Height of the video above the timeline (landscape video); null: as much as its shape can use. */
+  videoHeight: number | null;
+  /** Width of the video beside the timeline (portrait video); null: as much as its shape can use. */
+  videoWidth: number | null;
+  videoShown: boolean;
+  sideWidth: number;
+  sideShown: boolean;
+}
+
+export const DEFAULT_LAYOUT: LayoutPrefs = {
+  videoHeight: null,
+  videoWidth: null,
+  videoShown: true,
+  sideWidth: 372,
+  sideShown: true,
 };
 
 export type Theme = "dark" | "light";

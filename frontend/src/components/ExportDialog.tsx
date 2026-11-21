@@ -3,7 +3,7 @@
 import { Download } from "lucide-react";
 import { useState } from "react";
 import { downloadExport } from "@/lib/api";
-import type { ExportFormat, Session } from "@/lib/types";
+import type { ExportFormat, Session, Sound } from "@/lib/types";
 import styles from "./ExportDialog.module.css";
 import { Button, Dialog, ErrorText } from "./ui";
 
@@ -16,8 +16,8 @@ const FORMATS: { value: ExportFormat; label: string; hint: string }[] = [
 ];
 
 /** Same rule as the server: "vocals", "no vocals", "everything else" or "mix". */
-export function mixLabel(session: Session, gains: Record<string, number>): string {
-  const done = session.tracks.filter((t) => t.status === "done");
+export function mixLabel(session: Session, takes: { id: string; prompt: string }[], gains: Record<string, number>): string {
+  const done = takes;
   const audible = done.filter((t) => (gains[t.id] ?? 0) > 0);
   const restOn = !!session.rest && (gains.rest ?? 0) > 0;
   const keys = [...audible.map((t) => t.id), ...(restOn ? ["rest"] : [])];
@@ -35,34 +35,42 @@ const ext = (name: string) => (/\.[^.]+$/.exec(name)?.[0] ?? ".mp4").toLowerCase
 
 export function ExportDialog({
   session,
+  sounds,
   gains,
+  segments,
   summary,
   open,
   initialKind,
   onClose,
 }: {
   session: Session;
+  sounds: Sound[];
+  /** Linear gain per id of the take that plays, and "rest": what plays outside the parts below. */
   gains: Record<string, number>;
+  /** Parts of the file that play other gains ("only here" changes). */
+  segments: { start: number; end: number; gains: Record<string, number> }[];
   summary: string;
   open: boolean;
   initialKind: ExportKind;
   onClose: () => void;
 }) {
-  const done = session.tracks.filter((t) => t.status === "done");
+  // One track per sound: the take that plays.
+  const done = sounds.filter((sound) => sound.take).map((sound) => ({ id: sound.take!.id, prompt: sound.prompt }));
   const [kind, setKind] = useState<ExportKind>(initialKind);
   const [format, setFormat] = useState<ExportFormat>("wav");
   const [picked, setPicked] = useState<Set<string>>(() => new Set([...done.map((t) => t.id), "rest"]));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const silent = Object.values(gains).every((g) => g <= 0);
+  const silent = [gains, ...segments.map((s) => s.gains)].every((g) => Object.values(g).every((value) => value <= 0));
+  const label = segments.length ? "mix" : mixLabel(session, done, gains);
   const base = stem(session.source.filename);
   const fileName =
     kind === "tracks"
       ? `${base} [tracks].zip`
       : kind === "video"
-        ? `${base} [${mixLabel(session, gains)}]${ext(session.source.filename)}`
-        : `${base} [${mixLabel(session, gains)}].${format}`;
+        ? `${base} [${label}]${ext(session.source.filename)}`
+        : `${base} [${label}].${format}`;
   const chosen = [...done.map((t) => t.id), ...(session.rest ? ["rest"] : [])].filter((k) => picked.has(k));
   const disabled =
     busy || (kind === "tracks" ? chosen.length === 0 : silent) || (kind === "video" && !session.source.is_video);
@@ -79,7 +87,7 @@ export function ExportDialog({
     setBusy(true);
     setError(null);
     try {
-      await downloadExport(session.id, { kind, format, gains, tracks: chosen });
+      await downloadExport(session.id, { kind, format, gains, segments, tracks: chosen });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -110,7 +118,9 @@ export function ExportDialog({
           <input type="radio" name="export-kind" checked={kind === "mix"} onChange={() => setKind("mix")} />
           <span className={styles.optionText}>
             <span className={styles.optionTitle}>What you hear</span>
-            <span className={styles.optionHint}>{silent ? "Everything is muted right now." : `One file with your current mix: ${summary}.`}</span>
+            <span className={styles.optionHint}>
+              {silent ? "Everything is removed right now." : `One file with your current mix: ${summary.charAt(0).toLowerCase() + summary.slice(1)}.`}
+            </span>
           </span>
         </label>
         <div className={styles.option} data-checked={kind === "tracks"}>

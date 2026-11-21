@@ -51,3 +51,32 @@ export function expiresIn(epochSeconds: number | null): string | null {
   if (hours < 3) return `Expires in ${Math.round(hours)} h`;
   return null;
 }
+
+/** Slider position -> how much of a sound is left: "Removed", "35%", "100%", "150%". */
+export function formatLevel(position: number): string {
+  if (position <= 0) return "Removed";
+  return `${Math.round(sliderToGain(position) * 100)}%`;
+}
+
+/** 1536 -> "1.5 KB"; sizes on disk, in units of 1024. */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 MB";
+  const mb = bytes / 1024 / 1024;
+  if (mb < 0.1) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  if (mb < 10) return `${mb.toFixed(1)} MB`;
+  if (mb < 1024) return `${Math.round(mb)} MB`;
+  return `${(mb / 1024).toFixed(mb < 10 * 1024 ? 1 : 0)} GB`;
+}
+
+/** A part of the file: "0:03.2 to 0:05.8". */
+export function formatSpan(start: number, end: number): string {
+  return `${formatTime(start, true)} to ${formatTime(end, true)}`;
+}
+
+// Built from a string: property escapes need a newer syntax target than this project compiles to.
+const NOT_ENGLISH = new RegExp("[^\\p{Script=Latin}\\p{N}\\p{P}\\p{S}\\p{Z}\\p{M}]", "u");
+
+/** False when a description has letters outside the Latin alphabet: SAM-Audio only understands English. */
+export function isEnglish(text: string): boolean {
+  return !NOT_ENGLISH.test(text);
+}
