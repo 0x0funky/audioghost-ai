@@ -1,5 +1,68 @@
 # Changelog
 
+## v1.4.0 - 2026-11
+
+A timeline that works like an editor's, takes you can compare, projects that stay, and batches.
+
+### New
+- **Select a part of the timeline.** Drag on a track to select a part; drag the ruler to move the playhead (a click on
+  a track moves it too). With a selection you can:
+  - play or loop just that part (Space, L);
+  - **change the mix there only**: *Remove talking here* takes a sound out between 0:10 and 0:15 and leaves the rest
+    of the file alone. Exports follow, with a 30 ms crossfade at each edge;
+  - **separate only that part** (*Part of the file* in the panel). Only that part goes through the model, and outside
+    it the audio stays the original, sample for sample. On a 4-minute stereo file, a 20-second part took 6 s where
+    the whole file took 37 s. Such a take stores only its part on disk; the mixes, the exports and the browser read
+    it at full length.
+- **Takes.** *Try again* on a track makes another take with another seed and keeps the one you had. Step through the
+  takes of a sound and the one you stop on is what plays and what gets exported. A take costs one model pass; it does
+  not touch *Everything else*.
+- **Seeds.** Every take records the seed it used (in the track's menu). Set that seed under *Advanced* and the same
+  settings repeat the result. The seed used to be random and unknown.
+- **Everything else can be rebuilt.** Its button runs the chain again with another seed and, if you want, in another
+  order: the sound the model removes first comes out cleanest. The version you had is kept, and you switch between
+  them on the track. On a test recording, the talking removed first had 1.5 to 6 dB less of it left than when it was
+  removed second (two runs with different seeds).
+- **Projects stay until you delete them.** They used to be deleted after 24 hours. The start screen lists them with
+  their size on disk. `AUDIOGHOST_RETENTION_HOURS` brings the old behaviour back on a shared machine.
+- **Batch.** From a project, *Batch...* applies the same sounds, model settings and mix to more files. Each file is
+  separated in the background as its own project; the batch's page shows the progress and downloads every result,
+  one by one or as one ZIP.
+- **Hints you can find.** *Mark where it is* sits under each sound you are about to separate. It explains what to do,
+  and then drags on the timeline mark where that sound is, or is not. *Try again with hints...* in a track's menu does
+  the same for a sound you already separated. Hints help with short, separate sounds; for speech or music that runs
+  through a file they can make the result worse, and the app says so.
+- **Undo and shortcuts.** Ctrl+Z / Ctrl+Shift+Z for the mix, the hints and the choice of take. Arrow keys move the
+  playhead, I and O set a selection, M and S act on the chosen track, + and - zoom (so does Ctrl + mouse wheel), and
+  ? lists them all.
+- **Panes you can resize.** Drag the bar next to the video or the panel; a double-click resets it. A portrait video
+  sits beside the tracks instead of above them, and the video has a full-screen button. The panel can be hidden.
+
+### Changed
+- The mixer says what it does: **Only** and **Remove** instead of S and M, and the level as a percentage of the
+  recorded level instead of dB. The bar at the bottom reads "No talking in 1 part" or "Backing music at 30%".
+- Descriptions must be in English, the only language SAM-Audio's text encoder understands. Other scripts are refused
+  with that explanation, in the app and in the API, instead of quietly giving a poor result.
+- With a single sound, *Everything else* is that take's own "without" file. A second copy of the same audio is no
+  longer written (a third less disk space for a project with one sound), and it follows the take you choose.
+- Removing the second-to-last sound makes *Everything else* exact again (the remaining sound's own "without") instead
+  of an approximation.
+- A menu per track (try again, download, seed, delete a take, remove the sound) replaces the row of chips in the panel.
+  Removing a sound asks first.
+- The action bar above the tracks is always there, so the tracks no longer move when a selection appears.
+
+### API
+- `POST /api/sessions/{id}/separate` takes `range` (separate only this part), `seed`, and `retake_of` per prompt.
+  Tracks carry `sound`, `active`, `range` and `seed`.
+- `POST .../tracks/{track}/activate`, `POST .../rest/rebuild`, `DELETE .../rest/job`, `POST .../rest/{rev}/activate`
+  and `DELETE .../rest/{rev}`.
+- `POST .../export` takes `segments`: parts of the file that play other gains.
+- `GET .../files/{name}` streams the files of a part-only take at full length (with Range requests), though only
+  the part is stored.
+- `/api/batches` (create, list, add a file, export one result or all).
+- `GET /api/sessions` returns each session's `size_bytes`, the total, and the retention.
+
+
 ## v1.3.1 - 2026-11
 
 ### Fixed
@@ -49,7 +112,7 @@ No Hugging Face account anymore, smaller downloads, and a Windows desktop app.
 A new workspace: several sounds per run, each on its own track, a mixer, and exports of exactly what you hear.
 
 ### New
-- **Sessions**: an upload and everything separated from it live in a session that survives page reloads and restarts (the URL carries `?session=`). Recent sessions are listed on the start screen for 24 hours.
+- **Sessions**: an upload and everything separated from it live in a session that survives page reloads and restarts (the URL carries `?session=`). Recent sessions are listed on the start screen for 24 hours (since v1.4: until you delete them).
 - **Several sounds per run**, one track each, processed one after another; finished tracks are playable while the next one runs. Cancel a running track, or remove queued and finished ones.
 - **Everything else, made by the model**: each new sound is removed by SAM-Audio from what the earlier ones left (a chain), and each track also keeps the model's own "without this sound". SAM-Audio regenerates what it separates, so its output does not line up with the original sample for sample: on real recordings, subtracting the tracks from the original removed only 0-4 dB of a sound, while the chain removed 5-10 dB and still sounds like the recording.
 - **The mix plays model output only**, picked by what you changed: everything at 0 dB plays the original; one track changed plays that track's "without" plus the track at your level; more changes play Everything else plus the tracks. Exports follow the same rule. Removing a finished track adds its sound back to Everything else.
