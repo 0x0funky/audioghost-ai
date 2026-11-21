@@ -364,16 +364,114 @@ def _friendly_error(err: BaseException) -> str:
     return text if len(text) <= 300 else text[:297] + "..."
 
 
+#: A part of a file that is separated on its own crossfades into the rest of it over this long.
+PART_FADE_SECONDS = 0.03
+
+
+def _part_bounds(rng, total: int, sample_rate: int):
+    """``(start, end)`` in samples for a take's range (the whole file when it has none)."""
+    import sessions
+
+    return sessions.part_frames(rng, total)
+
+
+def _edge_weight(n: int, start: int, total: int, sample_rate: int):
+    """1 over a part of ``n`` samples that begins at ``start``, ramping from and to 0 at its edges inside the file."""
+    import torch
+
+    weight = torch.ones(n)
+    fade = max(1, min(int(PART_FADE_SECONDS * sample_rate), n // 2))
+    if start > 0:
+        weight[:fade] = torch.linspace(0.0, 1.0, fade)
+    if start + n < total:
+        weight[-fade:] = torch.linspace(1.0, 0.0, fade)
+    return weight
+
+
+def _blend(under, part, start: int, total: int, sample_rate: int):
+    """``part`` crossfaded at its edges into ``under``, the audio it replaces (both as long as the part)."""
+    weight = _edge_weight(part.shape[-1], start, total, sample_rate)
+    return under * (1.0 - weight) + part * weight
+
+
+def _stitch(base, part, start: int, sample_rate: int):
+    """``base`` with ``part`` crossfaded in from sample ``start`` (both ``[channels, samples]``)."""
+    n = part.shape[-1]
+    if start == 0 and n == base.shape[-1]:
+        return part
+    out = base.clone()
+    out[..., start:start + n] = _blend(base[..., start:start + n], part, start, base.shape[-1], sample_rate)
+    return out
+
+
+def _separate_part(lite, audio, prompt: str, rng, *, anchors=None, **kwargs):
+    """
+    ``sam_lite.separate`` on ``rng`` of ``audio`` only (on all of it when ``rng`` is None).
+    Returns ``(output, start)``: the output covers that part, which begins at sample ``start``.
+    """
+    from workers import sam_lite
+
+    start, end = _part_bounds(rng, audio.shape[-1], lite.sample_rate)
+    offset, length = start / lite.sample_rate, (end - start) / lite.sample_rate
+    local = [(kind, max(0.0, a - offset), min(length, b - offset)) for kind, a, b in anchors or []]
+    local = [(kind, a, b) for kind, a, b in local if b - a > 1e-3]
+    return sam_lite.separate(lite, audio[..., start:end], prompt, anchors=local, **kwargs), start
+
+
+def _rebuild_rest(lite, session_id: str, audio, stereo: bool, *, chunk: float, steps: int, seed,
+                  should_cancel, progress, order=None, keep_previous: bool = True) -> bool:
+    """
+    Run the chain of "everything else" again over the sounds that play now: the first is removed
+    by the model from the original, each next one from what the earlier ones left (over its
+    take's range). ``order``: sound ids, first removed first; the current order otherwise.
+    Returns whether a new "everything else" was published.
+    """
+    import sessions
+    from workers import audio_io, cleanup, sam_lite
+
+    data = sessions.load(session_id)
+    takes = {sessions.sound_of(t): t for t in sessions.active_takes(data)}
+    wanted = [s for s in (order or (data.get("rest") or {}).get("tracks", [])) if s in takes]
+    wanted += [s for s in takes if s not in wanted]
+    if len(wanted) < 2:
+        return False
+    folder = sessions.session_dir(session_id)
+    rest = audio
+    for index, sound in enumerate(wanted):
+        take = takes[sound]
+
+        def step_progress(fraction, message, index=index, name=take["prompt"]):
+            progress((index + fraction) / len(wanted), f"Removing {name}: {message}")
+
+        output, start = _separate_part(
+            lite, rest, take["prompt"], take.get("range"),
+            anchors=sam_lite.normalize_anchors(take.get("anchors")), decode_target=False,
+            chunk_seconds=chunk, steps=steps, seed=seed, should_cancel=should_cancel, progress=step_progress,
+        )
+        seed = output.seed
+        part = output.residual
+        if (take.get("settings") or {}).get("cleanup"):
+            target = audio_io.load_audio(folder / take["file"], lite.sample_rate, stereo=stereo)
+            if target.shape[-1] != part.shape[-1]:  # a whole-file track, a chain step over a part of it
+                target = target[..., start:start + part.shape[-1]]
+            part = cleanup.clean_residual(part, target, lite.sample_rate)
+        rest = _stitch(rest, part, start, lite.sample_rate)
+    return sessions.publish_rest(session_id, rest, lite.sample_rate, wanted, seed, keep_previous=keep_previous)
+
+
 @celery_app.task(bind=True)
 def separate_session_task(self, session_id: str, track_ids: List[str], options: dict):
     """
     Separate the queued prompts of a session, one after another. Each finished
-    sound is saved right away (the UI can play it while the next one runs), with
-    the model's own "without this sound" and a new "everything else": a chain, in
-    which the model removes this sound from what was left after the earlier ones.
-    Everything played back is model output; nothing is subtracted. With
-    ``options["cleanup"]`` ("Clean up leftovers"), the separated track then clears
-    its own traces from the "without" and from "everything else" (workers.cleanup).
+    take is saved right away (the UI can play it while the next one runs), with
+    the model's own "without this sound". A sound that is new gets one more
+    chain step: the model removes it from what was left after the earlier
+    sounds, which is the new "everything else". Another take of a sound leaves
+    "everything else" as it is. A take with a range separates only that part of
+    the file. Everything played back is model output; nothing is subtracted.
+    With ``options["cleanup"]`` ("Clean up leftovers"), the separated track
+    then clears its own traces from the "without" and from "everything else"
+    (workers.cleanup).
     """
     import sessions
     from workers import audio_io, cleanup, sam_lite
@@ -383,7 +481,6 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
     quality = options.get("quality") if options.get("quality") in QUALITY_PRESETS else "balanced"
     steps = sam_lite.QUALITY_STEPS[quality]
     chunk = max(5.0, min(60.0, float(options.get("chunk_duration") or 25.0)))
-    seed = options.get("seed")
     clean_up = bool(options.get("cleanup"))
 
     def job_cancelled() -> bool:
@@ -424,7 +521,8 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
             bool(options.get("use_float32")), token, note,
         )
         data = sessions.load(session_id)
-        source = sessions.session_dir(session_id) / data["source"]["file"]
+        folder = sessions.session_dir(session_id)
+        source = folder / data["source"]["file"]
         stereo = bool(options.get("stereo")) and data["source"]["channels"] > 1
         audio = audio_io.load_audio(source, lite.sample_rate, stereo=stereo)
 
@@ -438,7 +536,10 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
             safely(sessions.set_track, session_id, tid, status="running", progress=0.0, message="Starting")
             started = time.perf_counter()
             last = {"time": 0.0}
-            chain_from = dict(data["rest"]) if data.get("rest") else None
+            need = sessions.chain_need(data, track)
+            chain_from = dict(data["rest"]) if need == "step" else None
+            rng = track.get("range")
+            seed = (track.get("settings") or {}).get("seed", options.get("seed"))
 
             def progress(fraction, message, tid=tid, last=last):
                 now = time.monotonic()
@@ -455,25 +556,36 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
                 return lambda fraction, message: progress(lo + (hi - lo) * fraction, message)
 
             try:  # one bad prompt (or a failed save) shouldn't stop the rest
-                common = dict(chunk_seconds=chunk, steps=steps, seed=seed, should_cancel=should_cancel,
-                              anchors=sam_lite.normalize_anchors(track.get("anchors")))
-                result = sam_lite.separate(lite, audio, track["prompt"],
-                                           progress=stage(0.0, 0.5 if chain_from else 1.0), **common)
-                without = result.residual
+                common = dict(chunk_seconds=chunk, steps=steps, should_cancel=should_cancel)
+                anchors = sam_lite.normalize_anchors(track.get("anchors"))
+                first, start = _separate_part(lite, audio, track["prompt"], rng, anchors=anchors, seed=seed,
+                                              progress=stage(0.0, 0.5 if need == "step" else 1.0), **common)
+                part_target, part_without = first.target, first.residual
                 if clean_up:
-                    without = cleanup.clean_residual(without, result.target, lite.sample_rate)
-                rest = without
-                if chain_from:
+                    part_without = cleanup.clean_residual(part_without, part_target, lite.sample_rate)
+                total = audio.shape[-1]
+                part = (start, start + part_target.shape[-1]) if part_target.shape[-1] < total else None
+                if part is None:
+                    target, without = part_target, part_without
+                else:
+                    # A take of a part keeps only that part: the track with faded edges, and its
+                    # "without" crossfading into the original at both ends.
+                    target = part_target * _edge_weight(part_target.shape[-1], start, total, lite.sample_rate)
+                    without = _blend(audio[..., part[0]:part[1]], part_without, start, total, lite.sample_rate)
+                rest = None
+                if need == "step":
                     # The chain: the model removes this sound from what the earlier ones left.
-                    previous = audio_io.load_audio(sessions.session_dir(session_id) / chain_from["file"],
-                                                   lite.sample_rate, stereo=stereo)
-                    rest = sam_lite.separate(lite, previous, track["prompt"], progress=stage(0.5, 1.0),
-                                             decode_target=False, **common).residual
+                    previous = sessions.read_tensor(data, chain_from["file"], stereo)
+                    second, _ = _separate_part(lite, previous, track["prompt"], rng, anchors=anchors,
+                                               seed=first.seed, decode_target=False,
+                                               progress=stage(0.5, 1.0), **common)
+                    part_rest = second.residual
                     if clean_up:
-                        rest = cleanup.clean_residual(rest, result.target, lite.sample_rate)
+                        part_rest = cleanup.clean_residual(part_rest, part_target, lite.sample_rate)
+                    rest = _stitch(previous, part_rest, start, lite.sample_rate)
                 elapsed = time.perf_counter() - started
-                safely(sessions.finish_track, session_id, tid, result.target, without, rest,
-                       lite.sample_rate, elapsed, chain_from)
+                outcome = safely(sessions.finish_track, session_id, tid, target, without, lite.sample_rate,
+                                 elapsed, rest=rest, chain_from=chain_from, seed=first.seed, part=part)
             except sam_lite.SeparationCancelled:
                 safely(sessions.drop_track, session_id, tid)
                 continue
@@ -483,6 +595,10 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
                        error=_friendly_error(err), finished_at=time.time())
                 continue
             logger.info("Session %s: %r done in %.1fs", session_id, track["prompt"], elapsed)
+            if outcome == "rebuild":
+                # This take covers another part of the file than the chain was made for (or its
+                # sound left the chain meanwhile): "everything else" is run again.
+                _rebuild_for_job(lite, session_id, job_id, audio, stereo, chunk, steps, first.seed, job_cancelled)
 
     except Exception as err:  # noqa: BLE001 - setup failed: report it on every open track
         logger.exception("Session job %s failed", job_id)
@@ -499,6 +615,99 @@ def separate_session_task(self, session_id: str, track_ids: List[str], options: 
         try:
             from workers import sam_lite
 
+            sam_lite.empty_device_cache()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _rebuild_for_job(lite, session_id: str, job_id: str, audio, stereo: bool, chunk: float, steps: int,
+                     seed, should_cancel, order=None, keep_previous: bool = False) -> None:
+    """``_rebuild_rest`` with its progress, and its failure, shown on "everything else"."""
+    import sessions
+    from workers import sam_lite
+
+    last = {"time": 0.0}
+
+    def progress(fraction, message):
+        now = time.monotonic()
+        if now - last["time"] < 0.5 and fraction < 1.0:
+            return
+        last["time"] = now
+        sessions.set_rest_job(session_id, progress=round(fraction, 3), message=message)
+        queue_state.touch_running(job_id)
+
+    try:
+        sessions.set_rest_job(session_id, {"job_id": job_id, "status": "running", "progress": 0.0,
+                                           "message": "Starting", "error": None})
+        published = _rebuild_rest(lite, session_id, audio, stereo, chunk=chunk, steps=steps, seed=seed,
+                                  should_cancel=should_cancel, progress=progress, order=order,
+                                  keep_previous=keep_previous)
+        if published or not sessions.rest_is_stale(sessions.load(session_id)):
+            sessions.set_rest_job(session_id)
+        else:
+            sessions.set_rest_job(session_id, status="failed", message="",
+                                  error="The sounds changed while everything else was being rebuilt. Rebuild it again.")
+    except sam_lite.SeparationCancelled:
+        sessions.set_rest_job(session_id)
+    except sessions.SessionNotFound:
+        pass
+    except Exception as err:  # noqa: BLE001
+        logger.exception("Session %s: rebuilding everything else failed", session_id)
+        try:
+            sessions.set_rest_job(session_id, status="failed", message="", error=_friendly_error(err))
+        except sessions.SessionNotFound:
+            pass
+
+
+@celery_app.task(bind=True)
+def rebuild_rest_task(self, session_id: str, options: dict):
+    """
+    Rebuild "everything else" of a session: the chain run again over the sounds that play now,
+    with another seed and, if asked, in another order (``options["order"]``: sound ids). The
+    version it replaces is kept to compare with.
+    """
+    import sessions
+    from workers import audio_io, sam_lite
+
+    job_id = self.request.id
+    queue_state.mark_started(job_id)
+    quality = options.get("quality") if options.get("quality") in QUALITY_PRESETS else "balanced"
+    try:
+        token = read_hf_token()
+        _check_model_requirement(options.get("model_size", "base"), options.get("variant", "default"),
+                                 bool(options.get("use_float32")), token)
+
+        def note(_value, message):
+            try:
+                sessions.set_rest_job(session_id, message=message)
+            except sessions.SessionNotFound:
+                pass
+            queue_state.touch_running(job_id)
+
+        lite = _get_model(options.get("model_size", "base"), options.get("variant", "default"),
+                          bool(options.get("use_float32")), token, note)
+        data = sessions.load(session_id)
+        source = sessions.session_dir(session_id) / data["source"]["file"]
+        stereo = bool(options.get("stereo")) and data["source"]["channels"] > 1
+        audio = audio_io.load_audio(source, lite.sample_rate, stereo=stereo)
+        _rebuild_for_job(
+            lite, session_id, job_id, audio, stereo,
+            max(5.0, min(60.0, float(options.get("chunk_duration") or 25.0))), sam_lite.QUALITY_STEPS[quality],
+            options.get("seed"), lambda: queue_state.is_cancelled(job_id),
+            order=options.get("order"), keep_previous=True,
+        )
+    except sessions.SessionNotFound:
+        pass
+    except Exception as err:  # noqa: BLE001 - setup failed
+        logger.exception("Rebuild job %s failed", job_id)
+        try:
+            sessions.set_rest_job(session_id, status="failed", message="", error=_friendly_error(err))
+        except sessions.SessionNotFound:
+            pass
+    finally:
+        queue_state.mark_finished(job_id)
+        gc.collect()
+        try:
             sam_lite.empty_device_cache()
         except Exception:  # noqa: BLE001
             pass

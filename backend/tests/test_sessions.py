@@ -58,12 +58,20 @@ def as_audio(x):
     return torch.from_numpy(x[None, :] if x.ndim == 1 else x)
 
 
-def finish(session, tid, target, without, rest, chain_from="current"):
-    """Finish a track with given model outputs; the chain starts from the current rest by default."""
+def finish(session, tid, target, without, rest=None, chain_from="current"):
+    """
+    Finish a take with given model outputs, the way the worker does: a chain step (``rest``) only when
+    the take's sound is new to a chain that already holds another sound. Returns True unless the track
+    was removed meanwhile.
+    """
     sid = session["id"]
+    data = sessions.load(sid)
+    step = sessions.chain_need(data, sessions.find_track(data, tid)) == "step" if sessions.find_track(data, tid) else False
     if chain_from == "current":
-        chain_from = sessions.load(sid).get("rest")
-    return sessions.finish_track(sid, tid, as_audio(target), as_audio(without), as_audio(rest), SR, 1.0, chain_from)
+        chain_from = data.get("rest") if step else None
+    outcome = sessions.finish_track(sid, tid, as_audio(target), as_audio(without), SR, 1.0,
+                                    rest=as_audio(rest) if step and rest is not None else None, chain_from=chain_from)
+    return outcome != "gone"
 
 
 def test_create_decodes_and_writes_overview(store):
@@ -83,17 +91,19 @@ def test_finish_publishes_track_without_and_chain(store):
     sid = session["id"]
     folder = sessions.session_dir(sid)
     ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}], {}, "job-1")
-    assert finish(session, ids[0], a, b + c, b + c)
+    assert finish(session, ids[0], a, b + c)
     data = sessions.load(sid)
     assert data["rest"]["rev"] == 1 and data["rest"]["tracks"] == [ids[0]]
     assert data["tracks"][0]["without"] == f"{ids[0]}.without.wav"
+    assert data["rest"]["file"] == f"{ids[0]}.without.wav"  # one sound: its own "without", no copy
     np.testing.assert_allclose(read(folder / f"{ids[0]}.without.wav")[:, 0], b + c, atol=1e-6)
     assert finish(session, ids[1], b, a + c, c)  # the chain step removed "mid" from "everything but low"
     data = sessions.load(sid)
     assert [t["status"] for t in data["tracks"]] == ["done", "done"]
     assert data["rest"]["rev"] == 2 and data["rest"]["tracks"] == ids
+    assert data["rest"]["file"] == "rest.2.wav"
     np.testing.assert_allclose(read(folder / data["rest"]["file"])[:, 0], c, atol=1e-6)
-    assert not (folder / "rest.1.wav").exists()
+    assert (folder / f"{ids[0]}.without.wav").exists()  # still that track's own "without"
 
 
 def test_unity_mix_plays_the_original(store):
@@ -184,8 +194,10 @@ def test_removing_a_done_track_puts_its_sound_back(store):
     data = sessions.load(sid)
     assert [t["id"] for t in data["tracks"]] == [ids[1]]
     assert data["rest"]["tracks"] == [ids[1]]
+    # One sound left: "everything else" is exactly that sound's own "without" again.
+    assert data["rest"]["file"] == f"{ids[1]}.without.wav"
     np.testing.assert_allclose(read(folder / data["rest"]["file"])[:, 0], a + c, atol=1e-5)
-    for leftover in (f"{ids[0]}.wav", f"{ids[0]}.without.wav", f"{ids[0]}.deleted.wav"):
+    for leftover in (f"{ids[0]}.wav", f"{ids[0]}.without.wav", f"{ids[0]}.deleted.wav", "rest.2.wav"):
         assert not (folder / leftover).exists()
     sessions.remove_done_track(sid, ids[1])  # nothing separated any more: no "everything else"
     assert sessions.load(sid)["rest"] is None
@@ -200,23 +212,28 @@ def test_everything_else_never_reuses_a_file_name(store):
     session, (a, b, c) = make_session(store, channels=1)
     sid = session["id"]
     folder = sessions.session_dir(sid)
-    names = []
+    seen = []
     for attempt in range(3):
         tid = sessions.add_tracks(sid, [{"text": "baby crying"}], {}, f"job-{attempt}")[0]
-        finish(session, tid, a, b + c, b + c)
-        names.append(sessions.load(sid)["rest"]["file"])
+        finish(session, tid, a, b + c)
+        rest = sessions.load(sid)["rest"]
+        assert rest["file"] == f"{tid}.without.wav"  # a single sound: a name of its own take
+        seen.append((rest["rev"], rest["file"]))
         sessions.remove_done_track(sid, tid)  # nothing left: "everything else" goes away
         assert sessions.load(sid)["rest"] is None
-    assert names == ["rest.1.wav", "rest.2.wav", "rest.3.wav"]
+    assert [rev for rev, _ in seen] == [1, 2, 3] and len({name for _, name in seen}) == 3
 
-    # Putting a removed track's sound back makes a new name too, after the highest one so far.
-    ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}], {}, "job-9")
-    finish(session, ids[0], a, b + c, b + c)
+    # The chain gets a new name every time too, after the highest revision so far.
+    ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}, {"text": "high"}], {}, "job-9")
+    finish(session, ids[0], a, b + c)
     finish(session, ids[1], b, a + c, c)
-    sessions.remove_done_track(sid, ids[0])
+    assert sessions.load(sid)["rest"]["file"] == "rest.5.wav"
+    finish(session, ids[2], c, a + b, np.zeros_like(c))
     assert sessions.load(sid)["rest"]["file"] == "rest.6.wav"
-    np.testing.assert_allclose(read(folder / "rest.6.wav")[:, 0], a + c, atol=1e-5)
-    assert sorted(p.name for p in folder.glob("rest.*.wav")) == ["rest.6.wav"]
+    sessions.remove_done_track(sid, ids[0])  # its sound goes back in: everything else + the track
+    assert sessions.load(sid)["rest"]["file"] == "rest.7.wav"
+    np.testing.assert_allclose(read(folder / "rest.7.wav")[:, 0], a, atol=1e-5)
+    assert sorted(p.name for p in folder.glob("rest.*.wav")) == ["rest.7.wav"]
 
 
 def test_finish_after_removal_discards_audio(store):
@@ -287,16 +304,19 @@ def test_chain_step_puts_back_a_track_removed_meanwhile(store):
     session, (a, b, c) = make_session(store, channels=1)
     sid = session["id"]
     folder = sessions.session_dir(sid)
-    ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}], {}, "job-1")
-    finish(session, ids[0], a, b + c, b + c)
-    chain_from = dict(sessions.load(sid)["rest"])  # the "mid" step starts from "everything but low"
-    sessions.set_track(sid, ids[1], status="running")
-    sessions.remove_done_track(sid, ids[0])  # removed while "mid" runs
+    ids = sessions.add_tracks(sid, [{"text": "low"}, {"text": "mid"}, {"text": "high"}], {}, "job-1")
+    finish(session, ids[0], a, b + c)
+    finish(session, ids[1], b, a + c, c)
+    chain_from = dict(sessions.load(sid)["rest"])  # the "high" step starts from "everything but low and mid"
+    sessions.set_track(sid, ids[2], status="running")
+    sessions.remove_done_track(sid, ids[0])  # removed while "high" runs
     assert (folder / f"{ids[0]}.deleted.wav").exists()
-    assert finish(session, ids[1], b, a + c, c, chain_from=chain_from)
+    outcome = sessions.finish_track(sid, ids[2], as_audio(c), as_audio(a + b), SR, 1.0,
+                                    rest=as_audio(np.zeros_like(c)), chain_from=chain_from)
+    assert outcome == "done"
     data = sessions.load(sid)
-    assert data["rest"]["tracks"] == [ids[1]]
-    np.testing.assert_allclose(read(folder / data["rest"]["file"])[:, 0], a + c, atol=1e-5)
+    assert data["rest"]["tracks"] == [ids[1], ids[2]]
+    np.testing.assert_allclose(read(folder / data["rest"]["file"])[:, 0], a, atol=1e-5)  # "low" is back in
     sessions.purge_deleted(sid)
     assert not (folder / f"{ids[0]}.deleted.wav").exists()
 
@@ -317,7 +337,8 @@ def test_ids_cannot_escape_the_session_folder(store):
     for name in ("session.json", "../original.wav", "original.wav/..", "t123.wav", "exports",
                  "t0123abcd.deleted.wav", "rest-build-1234abcd.wav"):
         assert not sessions.SERVABLE.match(name)
-    for name in ("original.wav", "t0123abcd.wav", "t0123abcd.without.wav", "rest.3.peaks.json", "source.mp4"):
+    for name in ("original.wav", "t0123abcd.wav", "t0123abcd.without.wav", "t0123abcd.without.peaks.json",
+                 "rest.3.peaks.json", "source.mp4"):
         assert sessions.SERVABLE.match(name)
 
 
@@ -340,10 +361,8 @@ def client(store, monkeypatch):
     monkeypatch.setattr(api_sessions.model_license, "accepted", lambda: True)
     monkeypatch.setattr(api_sessions.queue_state, "enqueue", lambda job: None)
     monkeypatch.setattr(api_sessions.queue_state, "jobs_ahead", lambda job: 0)
-    monkeypatch.setattr(
-        tasks.separate_session_task, "apply_async",
-        lambda args, task_id: queued.append((args, task_id)),
-    )
+    for task in (tasks.separate_session_task, tasks.rebuild_rest_task):
+        monkeypatch.setattr(task, "apply_async", lambda args, task_id: queued.append((args, task_id)))
     test_client = TestClient(main.app)
     test_client.queued = queued
     return test_client
@@ -434,8 +453,7 @@ def test_api_files_support_range_requests(client):
 def test_api_export_mix(client):
     sid = upload(client).json()["id"]
     [tid] = sessions.add_tracks(sid, [{"text": "high"}], {}, "job-1")
-    sessions.finish_track(sid, tid, as_audio(tone(660, 2.0)), as_audio(tone(440, 2.0)), as_audio(tone(440, 2.0)),
-                          SR, 1.0, None)
+    finish({"id": sid}, tid, tone(660, 2.0), tone(440, 2.0))
     track = client.get(f"/api/sessions/{sid}").json()["tracks"][0]
     assert track["without_url"].endswith(f"/files/{tid}.without.wav")
     assert client.get(track["without_url"]).status_code == 200

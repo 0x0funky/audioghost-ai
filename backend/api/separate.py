@@ -9,7 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from settings import MAX_UPLOAD_MB, RETENTION_HOURS, UPLOAD_DIR
+from settings import LEGACY_RETENTION_HOURS, MAX_UPLOAD_MB, UPLOAD_DIR
 from workers import dispatch, queue_state
 from workers.tasks import cleanup_old_files, separate_audio_task
 
@@ -134,7 +134,7 @@ async def create_separation_task(
         anchors = [["+", max(0.0, float(start_time)), float(end_time)]]
     options["anchors"] = anchors
 
-    cleanup_old_files(RETENTION_HOURS)
+    cleanup_old_files(LEGACY_RETENTION_HOURS)
     upload_path = await _save_upload(file, uuid.uuid4().hex)
     task_id = _submit(upload_path, description, options)
     return SeparationResponse(task_id=task_id, status="pending", message="Task submitted successfully")
@@ -170,7 +170,7 @@ async def create_batch_separation(
         "is_video": _is_video(file),
         "original_filename": Path(file.filename or "audio").name,
     }
-    cleanup_old_files(RETENTION_HOURS)
+    cleanup_old_files(LEGACY_RETENTION_HOURS)
     upload_path = await _save_upload(file, uuid.uuid4().hex)
     return [
         SeparationResponse(
