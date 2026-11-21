@@ -1,7 +1,7 @@
 {
   "name": "audioghost-desktop",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.4.0-rc.1",
   "type": "module",
   "scripts": {
     "prepare-resources": "node scripts/prepare.mjs",
