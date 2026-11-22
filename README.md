@@ -2,13 +2,17 @@
 
 ![AudioGhost Banner](banner.png)
 
+🎧 **[Hear it before you install: audioghost.suixu.ai](https://audioghost.suixu.ai/?ref=github-readme)**. Three real recordings play before and after separation, in your browser. No NVIDIA graphics card? Join the waitlist there for **AudioGhost Cloud**, which runs in the browser.
+
+![Type a sound, separate it, take it out of the mix](docs/images/demo.gif)
+
+<sub>Type a sound, separate it, take it out of the mix. A CC0 café recording, Base model, on an RTX 4090.</sub>
+
 **Pull any sound out of audio or video**
 
 Describe the sounds you want (vocals, a dog barking, traffic) and AudioGhost puts each one on its own track. Mix the tracks and export exactly what you hear, or your video with the new soundtrack. Powered by Meta's [SAM-Audio](https://github.com/facebookresearch/sam-audio), running locally on your own GPU, with no account to create.
 
 ![Version](https://img.shields.io/badge/version-1.4-green) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
-
-🌐 **Hear it first: [audioghost.suixu.ai](https://audioghost.suixu.ai)** plays three real recordings before and after separation, right in your browser. No NVIDIA graphics card? Join the waitlist there for **AudioGhost Cloud**, which will run in the browser.
 
 ## 🆕 What's new in v1.4
 
